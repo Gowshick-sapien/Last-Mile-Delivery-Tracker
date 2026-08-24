@@ -10,14 +10,14 @@ function generateTrackingNumber() {
   return `TRK-${datePrefix}-${randomSuffix}`;
 }
 
+function generateInvoiceNumber() {
+  const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomSuffix = crypto.randomBytes(2).toString('hex').toUpperCase();
+  return `INV-${datePrefix}-${randomSuffix}`;
+}
+
 /**
- * Creates a new delivery order.
- * - Computes rate breakdown dynamically
- * - Resolves pickup and drop zones
- * - Persists order
- * - Appends initial TrackingEvent
- * - Sends confirmation notification
- * - Optionally triggers immediate auto-assignment
+ * Creates a new delivery order with pricing, tax breakdown, and automated invoice creation.
  */
 async function createOrder({
   customerId,
@@ -29,8 +29,9 @@ async function createOrder({
   breadthCm,
   heightCm,
   actualWeightKg,
-  orderType,
-  paymentType,
+  orderType = 'B2C',
+  paymentType = 'PREPAID',
+  deliveryTierCode = 'NEXT_DAY_STANDARD',
   autoAssign = false,
   creatorRole = 'CUSTOMER',
   creatorId = null
@@ -46,7 +47,7 @@ async function createOrder({
     throw err;
   }
 
-  // 1. Calculate rate and resolve zones
+  // 1. Calculate rate and resolve pricing, surge, SLAs, and taxes
   const rateQuote = await calculateRate({
     pickupPincode,
     dropPincode,
@@ -55,10 +56,13 @@ async function createOrder({
     heightCm,
     actualWeightKg,
     orderType,
-    paymentType
+    paymentType,
+    deliveryTierCode,
+    customerId
   });
 
   const trackingNumber = generateTrackingNumber();
+  const invoiceNumber = generateInvoiceNumber();
 
   // 2. Persist order in database
   const order = await prisma.order.create({
@@ -80,9 +84,15 @@ async function createOrder({
       orderType: rateQuote.orderType,
       paymentType: rateQuote.paymentType,
       zoneType: rateQuote.zoneType,
+      deliveryTierCode: rateQuote.deliveryTier.code,
+      speedMultiplier: rateQuote.deliveryTier.multiplier,
       baseCharge: rateQuote.costBreakdown.baseCharge,
-      weightCharge: rateQuote.costBreakdown.weightCharge,
+      weightCharge: rateQuote.costBreakdown.baseWeightCharge,
+      discountAmount: rateQuote.costBreakdown.discountAmount,
+      surgeAmount: rateQuote.costBreakdown.surgeAmount,
       codSurcharge: rateQuote.costBreakdown.codSurcharge,
+      taxableAmount: rateQuote.costBreakdown.taxableAmount,
+      taxAmount: rateQuote.costBreakdown.taxAmount,
       totalCharge: rateQuote.costBreakdown.totalCharge,
       status: 'CREATED'
     },
@@ -93,24 +103,39 @@ async function createOrder({
     }
   });
 
-  // 3. Create initial tracking event
+  // 3. Create GST Tax Invoice
+  const invoice = await prisma.invoice.create({
+    data: {
+      invoiceNumber,
+      orderId: order.id,
+      taxableAmount: rateQuote.costBreakdown.taxableAmount,
+      taxRate: rateQuote.costBreakdown.taxRate,
+      cgstAmount: rateQuote.costBreakdown.cgstAmount,
+      sgstAmount: rateQuote.costBreakdown.sgstAmount,
+      igstAmount: rateQuote.costBreakdown.igstAmount,
+      totalAmount: rateQuote.costBreakdown.totalCharge,
+      isInterState: rateQuote.zoneType === 'INTER'
+    }
+  });
+
+  // 4. Create initial tracking event
   await prisma.trackingEvent.create({
     data: {
       orderId: order.id,
       status: 'CREATED',
       actorId: creatorId || customerId,
       actorRole: creatorRole,
-      note: `Order placed. Billed Weight: ${order.billedWeightKg}kg, Total: INR ${order.totalCharge.toFixed(2)} (${order.paymentType})`
+      note: `Shipment confirmed. SLA: ${rateQuote.deliveryTier.name}, Billed: ${order.billedWeightKg}kg, Total: INR ${order.totalCharge.toFixed(2)} (Tax Incl.)`
     }
   });
 
-  // 4. Dispatch order confirmation notification
+  // 5. Dispatch confirmation notification
   await sendNotification({
     order,
     eventType: 'CREATED'
   });
 
-  // 5. If autoAssign requested, run assignment
+  // 6. Auto-assign if requested
   let assignedAgent = null;
   if (autoAssign) {
     try {
@@ -125,6 +150,7 @@ async function createOrder({
 
   return {
     order,
+    invoice,
     rateQuote,
     assignedAgent
   };
@@ -140,6 +166,7 @@ async function getCustomerOrders(customerId) {
     include: {
       pickupZone: true,
       dropZone: true,
+      invoice: true,
       agent: {
         select: { id: true, name: true, phone: true, email: true }
       },
@@ -170,6 +197,7 @@ async function getOrderDetails(identifier) {
       },
       pickupZone: true,
       dropZone: true,
+      invoice: true,
       trackingEvents: {
         orderBy: { createdAt: 'asc' },
         include: {
@@ -188,7 +216,7 @@ async function getOrderDetails(identifier) {
 /**
  * Fetch all orders for admin with optional filters
  */
-async function getAdminOrders({ status, zoneId, agentId, orderType, paymentType, search }) {
+async function getAdminOrders({ status, zoneId, agentId, orderType, paymentType, deliveryTierCode, search }) {
   const where = {};
 
   if (status && status.trim() !== '') {
@@ -214,6 +242,10 @@ async function getAdminOrders({ status, zoneId, agentId, orderType, paymentType,
     where.paymentType = paymentType.trim().toUpperCase();
   }
 
+  if (deliveryTierCode && deliveryTierCode.trim() !== '') {
+    where.deliveryTierCode = deliveryTierCode.trim().toUpperCase();
+  }
+
   if (search && search.trim() !== '') {
     const term = search.trim();
     where.OR = [
@@ -237,6 +269,7 @@ async function getAdminOrders({ status, zoneId, agentId, orderType, paymentType,
       },
       pickupZone: true,
       dropZone: true,
+      invoice: true,
       trackingEvents: {
         orderBy: { createdAt: 'asc' }
       }
@@ -246,6 +279,7 @@ async function getAdminOrders({ status, zoneId, agentId, orderType, paymentType,
 
 module.exports = {
   generateTrackingNumber,
+  generateInvoiceNumber,
   createOrder,
   getCustomerOrders,
   getOrderDetails,
