@@ -6,7 +6,9 @@ describe('Rate Calculation Engine Tests', () => {
     // Dimensions: 20x15x10 cm -> Volumetric = 3000 / 5000 = 0.6 kg
     // Actual Weight: 2.5 kg -> Billed Weight = 2.5 kg
     // RateCard B2C INTRA: Base = 50, Rate/kg = 20
-    // Expected: Base(50) + (2.5 * 20) = 50 + 50 = 100.00
+    // Base Subtotal = Base(50) + (2.5 * 20 = 50) = 100.00
+    // Fuel Index surge = +15.00 -> Taxable = 115.00
+    // GST 18% = 20.70 -> Total = 135.70
     const quote = await calculateRate({
       pickupPincode: '110001',
       dropPincode: '110005',
@@ -23,8 +25,10 @@ describe('Rate Calculation Engine Tests', () => {
     expect(quote.weightDetails.appliedWeightType).toBe('ACTUAL');
     expect(quote.costBreakdown.baseCharge).toBe(50.0);
     expect(quote.costBreakdown.weightCharge).toBe(50.0);
+    expect(quote.costBreakdown.baseSubtotal).toBe(100.0);
     expect(quote.costBreakdown.codSurcharge).toBe(0.0);
-    expect(quote.costBreakdown.totalCharge).toBe(100.0);
+    expect(quote.costBreakdown.taxableAmount).toBe(115.0);
+    expect(quote.costBreakdown.totalCharge).toBe(135.70);
   });
 
   test('Inter-Zone B2B COD when Volumetric Weight > Actual Weight', async () => {
@@ -33,7 +37,9 @@ describe('Rate Calculation Engine Tests', () => {
     // Actual Weight: 5.0 kg -> Billed Weight = 12.0 kg
     // RateCard B2B INTER: Base = 200, Rate/kg = 25
     // COD Surcharge B2B: 60
-    // Expected: Base(200) + (12.0 * 25 = 300) + COD(60) = 560.00
+    // Base Subtotal = Base(200) + (12.0 * 25 = 300) = 500.00
+    // Fuel Index surge = +15.00 -> Taxable = 500 + 60 + 15 = 575.00
+    // GST 18% = 103.50 -> Total = 678.50
     const quote = await calculateRate({
       pickupPincode: '110001',
       dropPincode: '110016',
@@ -52,7 +58,8 @@ describe('Rate Calculation Engine Tests', () => {
     expect(quote.costBreakdown.baseCharge).toBe(200.0);
     expect(quote.costBreakdown.weightCharge).toBe(300.0);
     expect(quote.costBreakdown.codSurcharge).toBe(60.0);
-    expect(quote.costBreakdown.totalCharge).toBe(560.0);
+    expect(quote.costBreakdown.taxableAmount).toBe(575.0);
+    expect(quote.costBreakdown.totalCharge).toBe(678.50);
   });
 
   test('Rejects unmapped pickup pincode', async () => {

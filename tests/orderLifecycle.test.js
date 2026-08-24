@@ -61,8 +61,8 @@ describe('Order Lifecycle, Auto-Assignment, and Tracking Integration Tests', () 
     expect(res.body.order.trackingNumber).toMatch(/^TRK-/);
     expect(res.body.order.status).toBe('ASSIGNED');
     expect(res.body.order.agentId).toBeDefined();
-    // B2C INTER: base 80 + (3.0 * 35 = 105) + COD 30 = 215.00
-    expect(res.body.order.totalCharge).toBe(215.0);
+    // B2C INTER: base 80 + (3.0 * 35 = 105) + COD 30 + Fuel 15 = Taxable 230.00 + 18% GST = 271.40
+    expect(res.body.order.totalCharge).toBe(271.40);
 
     const orderId = res.body.order.id;
     const trackingNumber = res.body.order.trackingNumber;
