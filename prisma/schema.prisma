@@ -8,30 +8,32 @@ datasource db {
 }
 
 model User {
-  id           String         @id @default(uuid())
-  name         String
-  email        String         @unique
-  passwordHash String
-  phone        String?
-  role         String         @default("CUSTOMER") // CUSTOMER, AGENT, ADMIN
-  agentProfile AgentProfile?
-  orders       Order[]        @relation("CustomerOrders")
-  assignedJobs Order[]        @relation("AgentOrders")
-  trackingLogs TrackingEvent[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id             String          @id @default(uuid())
+  name           String
+  email          String          @unique
+  passwordHash   String
+  phone          String?
+  role           String          @default("CUSTOMER") // CUSTOMER, AGENT, ADMIN
+  agentProfile   AgentProfile?
+  clientContract ClientContract?
+  orders         Order[]         @relation("CustomerOrders")
+  assignedJobs   Order[]         @relation("AgentOrders")
+  trackingLogs   TrackingEvent[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 }
 
 model Zone {
-  id            String         @id @default(uuid())
-  name          String         @unique
-  description   String?
-  areas         Area[]
-  agents        AgentProfile[]
-  pickupOrders  Order[]        @relation("PickupZoneOrders")
-  dropOrders    Order[]        @relation("DropZoneOrders")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id           String         @id @default(uuid())
+  name         String         @unique
+  description  String?
+  areas        Area[]
+  agents       AgentProfile[]
+  surgeRules   SurgeRule[]
+  pickupOrders Order[]        @relation("PickupZoneOrders")
+  dropOrders   Order[]        @relation("DropZoneOrders")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 }
 
 model Area {
@@ -62,6 +64,50 @@ model CODSurcharge {
   surchargeAmount Float    @default(0.0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model DeliveryTier {
+  id              String   @id @default(uuid())
+  code            String   @unique // HYPERLOCAL_2H, SAME_DAY_EXPRESS, NEXT_DAY_STANDARD
+  name            String
+  multiplier      Float    @default(1.0)
+  slaHours        Int      @default(24)
+  cutoffHour      Int?     // e.g. 14 for 2 PM cutoff
+  allowedZoneType String   @default("ALL") // ALL, INTRA_ONLY
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model SurgeRule {
+  id         String    @id @default(uuid())
+  name       String
+  surgeType  String    // TIME_OF_DAY, FESTIVAL, REMOTE_AREA, FUEL_INDEX
+  multiplier Float     @default(1.0)
+  flatAmount Float     @default(0.0)
+  startHour  Int?      // 0-23
+  endHour    Int?      // 0-23
+  startDate  DateTime?
+  endDate    DateTime?
+  zoneId     String?
+  zone       Zone?     @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  pincode    String?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model ClientContract {
+  id                 String   @id @default(uuid())
+  customerId         String   @unique
+  customer           User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customBaseCharge   Float?
+  customRatePerKg    Float?
+  discountPercentage Float    @default(0.0)
+  minMonthlyVolume   Int      @default(0)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model AgentProfile {
@@ -103,20 +149,43 @@ model Order {
   paymentType        String          // PREPAID, COD
   zoneType           String          // INTRA, INTER
   
+  deliveryTierCode   String          @default("NEXT_DAY_STANDARD")
+  speedMultiplier    Float           @default(1.0)
+  
   baseCharge         Float
   weightCharge       Float
-  codSurcharge       Float
+  discountAmount     Float           @default(0.0)
+  surgeAmount        Float           @default(0.0)
+  codSurcharge       Float           @default(0.0)
+  taxableAmount      Float           @default(0.0)
+  taxAmount          Float           @default(0.0)
   totalCharge        Float
   
   status             String          @default("CREATED") // CREATED, ASSIGNED, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, FAILED, RESCHEDULED, CANCELLED
   scheduledDate      DateTime?
   failureReason      String?
   
+  invoice            Invoice?
   trackingEvents     TrackingEvent[]
   notifications      Notification[]
   
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
+}
+
+model Invoice {
+  id            String   @id @default(uuid())
+  invoiceNumber String   @unique
+  orderId       String   @unique
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  taxableAmount Float
+  taxRate       Float    @default(18.0) // 18% GST
+  cgstAmount    Float    @default(0.0)  // 9%
+  sgstAmount    Float    @default(0.0)  // 9%
+  igstAmount    Float    @default(0.0)  // 18%
+  totalAmount   Float
+  isInterState  Boolean  @default(false)
+  createdAt     DateTime @default(now())
 }
 
 model TrackingEvent {
