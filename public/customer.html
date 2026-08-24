@@ -12,8 +12,8 @@
   <div class="container">
     <div class="page-header">
       <div>
-        <h1 class="page-title">Customer Dashboard</h1>
-        <p class="page-subtitle" id="welcome-msg">Manage your delivery orders and live shipments</p>
+        <h1 class="page-title">Customer Operations Portal</h1>
+        <p class="page-subtitle" id="welcome-msg">Manage shipments, calculate rates, and download invoices</p>
       </div>
       <div>
         <button class="btn btn-primary" onclick="switchTab('create')">Create New Shipment</button>
@@ -24,7 +24,7 @@
 
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('orders')" id="tab-btn-orders">My Shipments</button>
-      <button class="tab-btn" onclick="switchTab('create')" id="tab-btn-create">Create Shipment & Price Calculator</button>
+      <button class="tab-btn" onclick="switchTab('create')" id="tab-btn-create">Create Shipment & Dynamic Calculator</button>
     </div>
 
     <!-- TAB 1: My Orders -->
@@ -41,12 +41,12 @@
               <tr>
                 <th>Tracking Number</th>
                 <th>Destination</th>
-                <th>Type</th>
+                <th>SLA & Type</th>
                 <th>Payment</th>
                 <th>Billed Weight</th>
-                <th>Total Charge</th>
+                <th>Total (Tax Incl.)</th>
                 <th>Status</th>
-                <th>Created At</th>
+                <th>Documents</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -62,13 +62,13 @@
       </div>
     </div>
 
-    <!-- TAB 2: Create Order & Rate Calculator -->
+    <!-- TAB 2: Create Order & Dynamic Rate Calculator -->
     <div id="tab-create" class="tab-pane">
       <div class="grid" style="grid-template-columns: 1fr 1fr;">
         <!-- Left: Form -->
         <div class="card">
           <div class="card-header">
-            <h2 class="card-title">Shipment Details</h2>
+            <h2 class="card-title">Shipment Specifications</h2>
           </div>
 
           <form id="create-order-form">
@@ -88,7 +88,7 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="dropPincode">Drop Pincode (e.g. 110016, 110019, 110002)</label>
+              <label class="form-label" for="dropPincode">Drop Pincode (e.g. 110016, 110019, 110058)</label>
               <input type="text" id="dropPincode" class="form-control" value="110016" placeholder="6-digit pincode" required>
             </div>
 
@@ -112,17 +112,26 @@
               <input type="number" id="actualWeightKg" class="form-control" value="3.5" min="0.1" step="0.1" required>
             </div>
 
+            <div class="form-group">
+              <label class="form-label" for="deliveryTierCode">Delivery Speed (SLA Tier)</label>
+              <select id="deliveryTierCode" class="form-control" onchange="calculateQuote()">
+                <option value="NEXT_DAY_STANDARD">Next-Day Standard Delivery (1.0x baseline)</option>
+                <option value="SAME_DAY_EXPRESS">Same-Day Express Delivery (1.5x speed multiplier)</option>
+                <option value="HYPERLOCAL_2H">Hyperlocal 2-Hour Delivery (2.0x multiplier, Intra-Zone)</option>
+              </select>
+            </div>
+
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label" for="orderType">Order Type</label>
-                <select id="orderType" class="form-control">
-                  <option value="B2C">B2C (Retail Delivery)</option>
-                  <option value="B2B">B2B (Commercial Delivery)</option>
+                <select id="orderType" class="form-control" onchange="calculateQuote()">
+                  <option value="B2C">B2C (Retail)</option>
+                  <option value="B2B">B2B (Commercial / Enterprise)</option>
                 </select>
               </div>
               <div class="form-group">
                 <label class="form-label" for="paymentType">Payment Mode</label>
-                <select id="paymentType" class="form-control">
+                <select id="paymentType" class="form-control" onchange="calculateQuote()">
                   <option value="PREPAID">Prepaid</option>
                   <option value="COD">Cash on Delivery (COD)</option>
                 </select>
@@ -136,65 +145,70 @@
           </form>
         </div>
 
-        <!-- Right: Real-time Rate Breakdown Box -->
+        <!-- Right: Dynamic Pricing Breakdown Box -->
         <div class="card">
           <div class="card-header">
-            <h2 class="card-title">Live Rate Calculation</h2>
+            <h2 class="card-title">Live Commercial Breakdown</h2>
           </div>
 
           <div id="quote-placeholder" style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
-            Fill in shipment details and click <strong>Calculate Quote</strong> to see the auto-calculated rate card breakdown.
+            Click <strong>Calculate Quote</strong> to evaluate dynamic pricing, SLA multipliers, surges, and tax itemization.
           </div>
 
           <div id="quote-result" class="hidden">
-            <div style="margin-bottom: 1rem;">
-              <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Zone Resolution</div>
+            <div style="margin-bottom: 0.75rem;">
+              <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Route Topology</div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem;">
                 <div>
-                  <span id="q-pickup-zone" style="font-weight: 600;">-</span>
-                  <span style="font-size: 0.75rem; color: var(--text-muted);">(Pickup)</span>
-                  &rarr;
+                  <span id="q-pickup-zone" style="font-weight: 600;">-</span> &rarr;
                   <span id="q-drop-zone" style="font-weight: 600;">-</span>
-                  <span style="font-size: 0.75rem; color: var(--text-muted);">(Drop)</span>
                 </div>
                 <span id="q-zone-type" class="badge badge-intra">INTRA</span>
               </div>
             </div>
 
-            <div style="margin-bottom: 1rem;">
-              <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Weight Assessment</div>
+            <div style="margin-bottom: 0.75rem;">
+              <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Weight Assessment</div>
               <div class="quote-row">
-                <span>Actual Weight:</span>
-                <span id="q-actual-weight" style="font-weight: 500;">-</span>
-              </div>
-              <div class="quote-row">
-                <span>Volumetric Weight ((L*B*H)/5000):</span>
-                <span id="q-volumetric-weight" style="font-weight: 500;">-</span>
-              </div>
-              <div class="quote-row" style="background: #f8fafc; padding: 0.4rem 0.5rem; border-radius: 4px; font-weight: 600;">
-                <span>Billed Weight (Higher of above):</span>
-                <span id="q-billed-weight" style="color: var(--primary);">-</span>
+                <span>Billed Weight (Max of Actual & Volumetric):</span>
+                <span id="q-billed-weight" style="font-weight: 600; color: var(--primary);">-</span>
               </div>
             </div>
 
             <div class="quote-box">
-              <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;">
-                Pricing Breakdown
+              <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem;">
+                Charge Itemization
               </div>
               <div class="quote-row">
-                <span>Base Charge:</span>
-                <span id="q-base-charge">-</span>
+                <span>Base & Weight Freight:</span>
+                <span id="q-base-freight">-</span>
               </div>
               <div class="quote-row">
-                <span>Weight Charge (<span id="q-rate-kg"></span>):</span>
-                <span id="q-weight-charge">-</span>
+                <span>SLA Multiplier (<span id="q-speed-name">-</span>):</span>
+                <span id="q-speed-multiplier">-</span>
+              </div>
+              <div class="quote-row" id="q-discount-row" style="color: var(--success); display: none;">
+                <span>Enterprise Contract Discount (<span id="q-discount-pct"></span>%):</span>
+                <span id="q-discount-amt">-</span>
               </div>
               <div class="quote-row">
-                <span>COD Surcharge:</span>
+                <span>Dynamic Surge Fees (Peak/Fuel/Remote):</span>
+                <span id="q-surge-fee">-</span>
+              </div>
+              <div class="quote-row">
+                <span>COD Handling Surcharge:</span>
                 <span id="q-cod-surcharge">-</span>
               </div>
+              <div class="quote-row" style="border-top: 1px dashed var(--border-color); padding-top: 0.4rem; font-weight: 600;">
+                <span>Taxable Value:</span>
+                <span id="q-taxable-amt">-</span>
+              </div>
+              <div class="quote-row" style="font-size: 0.8rem; color: var(--text-secondary);">
+                <span>GST Tax (18.0%):</span>
+                <span id="q-tax-amt">-</span>
+              </div>
               <div class="quote-row total">
-                <span>Total Charge:</span>
+                <span>Total Amount (Tax Incl.):</span>
                 <span id="q-total-charge">-</span>
               </div>
             </div>
@@ -204,9 +218,9 @@
     </div>
   </div>
 
-  <!-- Order Details & Timeline Modal -->
+  <!-- Order Details Modal -->
   <div id="order-modal" class="modal-overlay hidden">
-    <div class="modal-dialog">
+    <div class="modal-dialog" style="max-width: 600px;">
       <div class="modal-header">
         <h3 class="modal-title" id="modal-order-title">Shipment Details</h3>
         <button type="button" class="btn btn-secondary btn-sm" onclick="closeOrderModal()">Close</button>
@@ -225,10 +239,6 @@
         <button type="button" class="btn btn-secondary btn-sm" onclick="closeRescheduleModal()">Close</button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem;">
-          Select a new delivery date for order <strong id="reschedule-order-trk"></strong>. An active agent will be assigned for the new attempt.
-        </p>
-
         <form id="reschedule-form">
           <input type="hidden" id="reschedule-order-id">
           <div class="form-group">
@@ -236,10 +246,10 @@
             <input type="date" id="rescheduleDate" class="form-control" required>
           </div>
           <div class="form-group">
-            <label class="form-label" for="rescheduleNote">Special Instructions (Optional)</label>
-            <textarea id="rescheduleNote" class="form-control" rows="2" placeholder="e.g. Please deliver after 3 PM"></textarea>
+            <label class="form-label" for="rescheduleNote">Special Instructions</label>
+            <textarea id="rescheduleNote" class="form-control" rows="2"></textarea>
           </div>
-          <button type="submit" class="btn btn-primary btn-block">Confirm Rescheduled Delivery</button>
+          <button type="submit" class="btn btn-primary btn-block">Confirm Rescheduled Date</button>
         </form>
       </div>
     </div>
@@ -258,12 +268,6 @@
 
     setupNavbar('customer');
     document.getElementById('welcome-msg').innerText = `Welcome back, ${user.name}`;
-
-    // Set default minimum reschedule date to tomorrow
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('rescheduleDate').min = tomorrow.toISOString().split('T')[0];
-    document.getElementById('rescheduleDate').value = tomorrow.toISOString().split('T')[0];
 
     function switchTab(tab) {
       document.getElementById('tab-orders').classList.remove('active');
@@ -290,7 +294,9 @@
         heightCm: parseFloat(document.getElementById('heightCm').value),
         actualWeightKg: parseFloat(document.getElementById('actualWeightKg').value),
         orderType: document.getElementById('orderType').value,
-        paymentType: document.getElementById('paymentType').value
+        paymentType: document.getElementById('paymentType').value,
+        deliveryTierCode: document.getElementById('deliveryTierCode').value,
+        customerId: user.id
       };
 
       try {
@@ -303,21 +309,32 @@
         document.getElementById('quote-placeholder').classList.add('hidden');
         document.getElementById('quote-result').classList.remove('hidden');
 
-        document.getElementById('q-pickup-zone').innerText = `${q.pickupArea.zoneName} (${q.pickupArea.pincode})`;
-        document.getElementById('q-drop-zone').innerText = `${q.dropArea.zoneName} (${q.dropArea.pincode})`;
+        document.getElementById('q-pickup-zone').innerText = `${q.pickupArea.zoneName}`;
+        document.getElementById('q-drop-zone').innerText = `${q.dropArea.zoneName}`;
         
         const ztBadge = document.getElementById('q-zone-type');
         ztBadge.innerText = q.zoneType;
         ztBadge.className = `badge badge-${q.zoneType.toLowerCase()}`;
 
-        document.getElementById('q-actual-weight').innerText = `${q.weightDetails.actualWeightKg} kg`;
-        document.getElementById('q-volumetric-weight').innerText = `${q.weightDetails.volumetricWeightKg} kg`;
-        document.getElementById('q-billed-weight').innerText = `${q.weightDetails.billedWeightKg} kg (${q.weightDetails.appliedWeightType})`;
+        document.getElementById('q-billed-weight').innerText = `${q.weightDetails.billedWeightKg} kg (Vol: ${q.weightDetails.volumetricWeightKg}kg, Act: ${q.weightDetails.actualWeightKg}kg)`;
 
-        document.getElementById('q-base-charge').innerText = formatCurrency(q.costBreakdown.baseCharge);
-        document.getElementById('q-rate-kg').innerText = `${formatCurrency(q.costBreakdown.ratePerKg)}/kg`;
-        document.getElementById('q-weight-charge').innerText = formatCurrency(q.costBreakdown.weightCharge);
+        document.getElementById('q-base-freight').innerText = formatCurrency(q.costBreakdown.baseSubtotal);
+        document.getElementById('q-speed-name').innerText = q.deliveryTier.name;
+        document.getElementById('q-speed-multiplier').innerText = `${q.costBreakdown.speedMultiplier}x (${formatCurrency(q.costBreakdown.speedAdjustedSubtotal)})`;
+
+        const discountRow = document.getElementById('q-discount-row');
+        if (q.costBreakdown.discountAmount > 0) {
+          discountRow.style.display = 'flex';
+          document.getElementById('q-discount-pct').innerText = q.costBreakdown.discountPercentage;
+          document.getElementById('q-discount-amt').innerText = `-${formatCurrency(q.costBreakdown.discountAmount)}`;
+        } else {
+          discountRow.style.display = 'none';
+        }
+
+        document.getElementById('q-surge-fee').innerText = formatCurrency(q.costBreakdown.surgeAmount);
         document.getElementById('q-cod-surcharge').innerText = formatCurrency(q.costBreakdown.codSurcharge);
+        document.getElementById('q-taxable-amt').innerText = formatCurrency(q.costBreakdown.taxableAmount);
+        document.getElementById('q-tax-amt').innerText = `${formatCurrency(q.costBreakdown.taxAmount)} (${q.costBreakdown.taxRate}%)`;
         document.getElementById('q-total-charge').innerText = formatCurrency(q.costBreakdown.totalCharge);
 
         return q;
@@ -344,6 +361,7 @@
         actualWeightKg: parseFloat(document.getElementById('actualWeightKg').value),
         orderType: document.getElementById('orderType').value,
         paymentType: document.getElementById('paymentType').value,
+        deliveryTierCode: document.getElementById('deliveryTierCode').value,
         autoAssign: true
       };
 
@@ -353,7 +371,7 @@
           body: JSON.stringify(payload)
         });
 
-        showAlert('alert-box', `Shipment created successfully. Tracking Number: ${data.order.trackingNumber}`, 'success');
+        showAlert('alert-box', `Shipment confirmed. Tracking Number: ${data.order.trackingNumber}`, 'success');
         switchTab('orders');
       } catch (err) {
         showAlert('alert-box', err.message || 'Failed to create shipment', 'danger');
@@ -368,13 +386,7 @@
       try {
         const data = await apiFetch('/orders');
         if (data.orders.length === 0) {
-          tbody.innerHTML = `
-            <tr>
-              <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-                No shipments placed yet. Click <strong>Create New Shipment</strong> to get started.
-              </td>
-            </tr>
-          `;
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">No shipments placed yet.</td></tr>`;
           return;
         }
 
@@ -384,21 +396,30 @@
               <a href="/track.html?tracking=${order.trackingNumber}" style="font-weight: 600; color: var(--primary); text-decoration: none;">
                 ${order.trackingNumber}
               </a>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">${formatDate(order.createdAt)}</div>
             </td>
             <td>
               <div>${order.dropAddress}</div>
               <span style="font-size: 0.75rem; color: var(--text-muted);">${order.dropZone?.name || 'Local'} (${order.dropPincode})</span>
             </td>
-            <td><span class="badge badge-${order.orderType.toLowerCase()}">${order.orderType}</span></td>
+            <td>
+              <div><span class="badge badge-${order.orderType.toLowerCase()}">${order.orderType}</span></div>
+              <span style="font-size: 0.75rem; color: var(--text-secondary);">${order.deliveryTierCode}</span>
+            </td>
             <td>${order.paymentType}</td>
             <td>${order.billedWeightKg} kg</td>
             <td style="font-weight: 600;">${formatCurrency(order.totalCharge)}</td>
             <td>${renderStatusBadge(order.status)}</td>
-            <td style="font-size: 0.8rem; color: var(--text-muted);">${formatDate(order.createdAt)}</td>
+            <td>
+              <div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
+                <a href="/api/orders/${order.id}/label" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">Label PDF</a>
+                <a href="/api/orders/${order.id}/invoice" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">Invoice PDF</a>
+              </div>
+            </td>
             <td>
               <div style="display: flex; gap: 0.35rem;">
                 <button class="btn btn-secondary btn-sm" onclick="viewOrderDetails('${order.id}')">Timeline</button>
-                ${order.status === 'FAILED' ? `<button class="btn btn-primary btn-sm" onclick="openRescheduleModal('${order.id}', '${order.trackingNumber}')">Reschedule</button>` : ''}
+                ${order.status === 'FAILED' ? `<button class="btn btn-primary btn-sm" onclick="openRescheduleModal('${order.id}')">Reschedule</button>` : ''}
               </div>
             </td>
           </tr>
@@ -429,7 +450,6 @@
                 <span class="timeline-time">${formatDate(evt.createdAt)}</span>
               </div>
               <div class="timeline-note">${evt.note || 'Status updated'}</div>
-              <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">Actor: ${evt.actor?.name || evt.actorRole}</div>
             </div>
           </div>
         `).join('');
@@ -440,67 +460,37 @@
               <span>Status:</span>
               ${renderStatusBadge(order.status)}
             </div>
-            ${order.failureReason ? `<div style="margin-top: 0.5rem; background: #fee2e2; color: #b91c1c; padding: 0.5rem; border-radius: 4px; font-size: 0.8rem;">Failure Reason: ${order.failureReason}</div>` : ''}
-          </div>
-
-          <div style="margin-bottom: 1rem; font-size: 0.875rem;">
-            <div><strong>Pickup:</strong> ${order.pickupAddress} (${order.pickupPincode}) - ${order.pickupZone?.name || 'Local'}</div>
-            <div style="margin-top: 0.25rem;"><strong>Drop:</strong> ${order.dropAddress} (${order.dropPincode}) - ${order.dropZone?.name || 'Local'}</div>
-            <div style="margin-top: 0.25rem;"><strong>Assigned Agent:</strong> ${order.agent ? `${order.agent.name} (${order.agent.phone || 'No phone'})` : 'Not yet assigned'}</div>
           </div>
 
           <div class="quote-box" style="margin-bottom: 1.5rem;">
-            <div class="quote-row"><span>Order Type:</span><span>${order.orderType} (${order.zoneType})</span></div>
-            <div class="quote-row"><span>Billed Weight:</span><span>${order.billedWeightKg} kg (Vol: ${order.volumetricWeightKg} kg, Act: ${order.actualWeightKg} kg)</span></div>
-            <div class="quote-row"><span>Payment:</span><span>${order.paymentType}</span></div>
-            <div class="quote-row total"><span>Total Amount:</span><span>${formatCurrency(order.totalCharge)}</span></div>
+            <div class="quote-row"><span>SLA Speed Tier:</span><span>${order.deliveryTierCode} (${order.speedMultiplier}x)</span></div>
+            <div class="quote-row"><span>Taxable Value:</span><span>${formatCurrency(order.taxableAmount)}</span></div>
+            <div class="quote-row"><span>GST 18% Tax:</span><span>${formatCurrency(order.taxAmount)}</span></div>
+            <div class="quote-row total"><span>Total Paid/Payable:</span><span>${formatCurrency(order.totalCharge)}</span></div>
           </div>
 
-          <h4 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem;">Tracking Timeline</h4>
+          <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem;">
+            <a href="/api/orders/${order.id}/label" target="_blank" class="btn btn-primary btn-sm btn-block" style="text-decoration:none;">Download Shipping Label (PDF)</a>
+            <a href="/api/orders/${order.id}/invoice" target="_blank" class="btn btn-secondary btn-sm btn-block" style="text-decoration:none;">Download Tax Invoice (PDF)</a>
+          </div>
+
+          <h4 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem;">Milestone Timeline</h4>
           <div class="timeline">
             ${timelineHtml}
           </div>
         `;
       } catch (err) {
-        body.innerHTML = `<div style="color: var(--danger);">Failed to load details: ${err.message}</div>`;
+        body.innerHTML = `<div style="color: var(--danger);">${err.message}</div>`;
       }
     }
 
-    function closeOrderModal() {
-      document.getElementById('order-modal').classList.add('hidden');
-    }
-
-    function openRescheduleModal(orderId, trackingNumber) {
+    function closeOrderModal() { document.getElementById('order-modal').classList.add('hidden'); }
+    function openRescheduleModal(orderId) {
       document.getElementById('reschedule-order-id').value = orderId;
-      document.getElementById('reschedule-order-trk').innerText = trackingNumber;
       document.getElementById('reschedule-modal').classList.remove('hidden');
     }
+    function closeRescheduleModal() { document.getElementById('reschedule-modal').classList.add('hidden'); }
 
-    function closeRescheduleModal() {
-      document.getElementById('reschedule-modal').classList.add('hidden');
-    }
-
-    document.getElementById('reschedule-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const orderId = document.getElementById('reschedule-order-id').value;
-      const newScheduledDate = document.getElementById('rescheduleDate').value;
-      const note = document.getElementById('rescheduleNote').value;
-
-      try {
-        const data = await apiFetch(`/orders/${orderId}/reschedule`, {
-          method: 'POST',
-          body: JSON.stringify({ newScheduledDate, note })
-        });
-
-        closeRescheduleModal();
-        showAlert('alert-box', data.message || 'Shipment rescheduled successfully.', 'success');
-        loadCustomerOrders();
-      } catch (err) {
-        alert(err.message || 'Failed to reschedule order');
-      }
-    });
-
-    // Initial load
     loadCustomerOrders();
   </script>
 </body>

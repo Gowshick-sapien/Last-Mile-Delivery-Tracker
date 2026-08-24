@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Control Center - Last-Mile Tracker</title>
+  <title>Admin Operations Center - Last-Mile Tracker</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Admin Operations Center</h1>
-        <p class="page-subtitle">Configure zones, rate cards, oversee orders, and manage agent assignments</p>
+        <p class="page-subtitle">Configure SLAs, dynamic surges, client contracts, and oversee shipments</p>
       </div>
       <div>
         <button class="btn btn-primary" onclick="switchAdminTab('create-order')">Place Order for Customer</button>
@@ -23,13 +23,13 @@
     <div id="alert-box" class="hidden"></div>
 
     <!-- Overview Metrics Cards -->
-    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
       <div class="stat-card">
         <div class="stat-label">Total Shipments</div>
         <div class="stat-value" id="m-total">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Active Shipments</div>
+        <div class="stat-label">Active</div>
         <div class="stat-value" id="m-active" style="color: var(--primary);">0</div>
       </div>
       <div class="stat-card">
@@ -37,23 +37,26 @@
         <div class="stat-value" id="m-delivered" style="color: var(--success);">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Failed Attempts</div>
+        <div class="stat-label">Failed</div>
         <div class="stat-value" id="m-failed" style="color: var(--danger);">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Total Revenue</div>
-        <div class="stat-value" id="m-revenue" style="font-size: 1.4rem;">INR 0</div>
+        <div class="stat-label">Revenue (Tax Incl.)</div>
+        <div class="stat-value" id="m-revenue" style="font-size: 1.3rem;">INR 0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Active Agents</div>
-        <div class="stat-value" id="m-agents">0</div>
+        <div class="stat-label">Enterprise VIPs</div>
+        <div class="stat-value" id="m-contracts">0</div>
       </div>
     </div>
 
     <!-- Tabs Navigation -->
     <div class="tabs">
-      <button class="tab-btn active" onclick="switchAdminTab('orders')" id="atab-btn-orders">All Shipments</button>
+      <button class="tab-btn active" onclick="switchAdminTab('orders')" id="atab-btn-orders">Shipments</button>
       <button class="tab-btn" onclick="switchAdminTab('create-order')" id="atab-btn-create-order">Create Order</button>
+      <button class="tab-btn" onclick="switchAdminTab('tiers')" id="atab-btn-tiers">SLA Speed Tiers</button>
+      <button class="tab-btn" onclick="switchAdminTab('surges')" id="atab-btn-surges">Dynamic Surges</button>
+      <button class="tab-btn" onclick="switchAdminTab('contracts')" id="atab-btn-contracts">Enterprise Contracts</button>
       <button class="tab-btn" onclick="switchAdminTab('zones')" id="atab-btn-zones">Zones & Areas</button>
       <button class="tab-btn" onclick="switchAdminTab('rates')" id="atab-btn-rates">Rate Cards & COD</button>
       <button class="tab-btn" onclick="switchAdminTab('agents')" id="atab-btn-agents">Delivery Agents</button>
@@ -64,18 +67,17 @@
       <div class="card">
         <div class="card-header">
           <h2 class="card-title">Shipment Management</h2>
-          <button class="btn btn-secondary btn-sm" onclick="loadAdminOrders()">Refresh Orders</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadAdminOrders()">Refresh</button>
         </div>
 
-        <!-- Filter Bar -->
-        <div style="background: #f8fafc; padding: 0.85rem; border-radius: var(--radius); border: 1px solid var(--border-color); margin-bottom: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <div style="background: #f8fafc; padding: 0.75rem; border-radius: var(--radius); border: 1px solid var(--border-color); margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
           <div style="flex: 1; min-width: 160px;">
             <input type="text" id="filter-search" class="form-control" placeholder="Search tracking #, customer, address..." oninput="debounceSearch()">
           </div>
           <div>
             <select id="filter-order-status" class="form-control" onchange="loadAdminOrders()">
               <option value="">All Statuses</option>
-              <option value="CREATED">Created (Unassigned)</option>
+              <option value="CREATED">Created</option>
               <option value="ASSIGNED">Assigned</option>
               <option value="PICKED_UP">Picked Up</option>
               <option value="IN_TRANSIT">In Transit</option>
@@ -83,21 +85,13 @@
               <option value="DELIVERED">Delivered</option>
               <option value="FAILED">Failed</option>
               <option value="RESCHEDULED">Rescheduled</option>
-              <option value="CANCELLED">Cancelled</option>
             </select>
           </div>
           <div>
             <select id="filter-order-type" class="form-control" onchange="loadAdminOrders()">
-              <option value="">All Types (B2B/B2C)</option>
+              <option value="">All Types</option>
               <option value="B2C">B2C</option>
               <option value="B2B">B2B</option>
-            </select>
-          </div>
-          <div>
-            <select id="filter-payment-type" class="form-control" onchange="loadAdminOrders()">
-              <option value="">All Payment Modes</option>
-              <option value="PREPAID">Prepaid</option>
-              <option value="COD">COD</option>
             </select>
           </div>
         </div>
@@ -108,37 +102,34 @@
               <tr>
                 <th>Tracking #</th>
                 <th>Customer</th>
-                <th>Route (Pickup &rarr; Drop)</th>
-                <th>Weight & Type</th>
-                <th>Charges</th>
-                <th>Assigned Agent</th>
+                <th>Route</th>
+                <th>SLA & Weight</th>
+                <th>Total (Tax Incl.)</th>
+                <th>Agent</th>
                 <th>Status</th>
+                <th>Documents</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="admin-orders-table-body">
-              <tr>
-                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-                  Loading shipments...
-                </td>
-              </tr>
+              <tr><td colspan="9" style="text-align: center; padding: 2rem;">Loading shipments...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
 
-    <!-- TAB 2: CREATE ORDER FOR CUSTOMER -->
+    <!-- TAB 2: CREATE ORDER -->
     <div id="atab-create-order" class="tab-pane">
       <div class="card" style="max-width: 800px; margin: 0 auto;">
         <div class="card-header">
-          <h2 class="card-title">Place Order on Behalf of Customer</h2>
+          <h2 class="card-title">Place Order for Customer</h2>
         </div>
 
         <form id="admin-create-order-form">
           <div class="form-group">
             <label class="form-label" for="adm-customerEmail">Customer Email Address</label>
-            <input type="email" id="adm-customerEmail" class="form-control" value="customer@tracker.com" placeholder="Registered customer email" required>
+            <input type="email" id="adm-customerEmail" class="form-control" value="customer@tracker.com" required>
           </div>
 
           <div class="form-row">
@@ -166,42 +157,43 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="adm-lengthCm">Length (cm)</label>
-              <input type="number" id="adm-lengthCm" class="form-control" value="40" min="1" step="0.1" required>
+              <input type="number" id="adm-lengthCm" class="form-control" value="40" required>
             </div>
             <div class="form-group">
               <label class="form-label" for="adm-breadthCm">Breadth (cm)</label>
-              <input type="number" id="adm-breadthCm" class="form-control" value="30" min="1" step="0.1" required>
+              <input type="number" id="adm-breadthCm" class="form-control" value="30" required>
             </div>
             <div class="form-group">
               <label class="form-label" for="adm-heightCm">Height (cm)</label>
-              <input type="number" id="adm-heightCm" class="form-control" value="20" min="1" step="0.1" required>
+              <input type="number" id="adm-heightCm" class="form-control" value="20" required>
             </div>
             <div class="form-group">
               <label class="form-label" for="adm-actualWeightKg">Actual Weight (kg)</label>
-              <input type="number" id="adm-actualWeightKg" class="form-control" value="4.0" min="0.1" step="0.1" required>
+              <input type="number" id="adm-actualWeightKg" class="form-control" value="4.0" required>
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
+              <label class="form-label" for="adm-deliveryTierCode">Delivery Tier (SLA)</label>
+              <select id="adm-deliveryTierCode" class="form-control">
+                <option value="NEXT_DAY_STANDARD">Next-Day Standard (1.0x)</option>
+                <option value="SAME_DAY_EXPRESS">Same-Day Express (1.5x)</option>
+                <option value="HYPERLOCAL_2H">Hyperlocal 2H (2.0x)</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label class="form-label" for="adm-orderType">Order Type</label>
               <select id="adm-orderType" class="form-control">
-                <option value="B2C">B2C (Retail)</option>
-                <option value="B2B">B2B (Enterprise)</option>
+                <option value="B2C">B2C</option>
+                <option value="B2B">B2B</option>
               </select>
             </div>
             <div class="form-group">
               <label class="form-label" for="adm-paymentType">Payment Type</label>
               <select id="adm-paymentType" class="form-control">
                 <option value="PREPAID">Prepaid</option>
-                <option value="COD">Cash on Delivery (COD)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="adm-autoAssign">Agent Assignment</label>
-              <select id="adm-autoAssign" class="form-control">
-                <option value="true">Auto-Assign to Best Available Agent</option>
-                <option value="false">Leave Unassigned (Manual Assignment)</option>
+                <option value="COD">COD</option>
               </select>
             </div>
           </div>
@@ -211,121 +203,253 @@
       </div>
     </div>
 
-    <!-- TAB 3: ZONES & AREAS -->
+    <!-- TAB 3: SLA SPEED TIERS -->
+    <div id="atab-tiers" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Delivery Speed Tiers (SLAs)</h2>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          Configure SLA multiplier coefficients and operational zone constraints for speed offerings.
+        </p>
+
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Tier Code</th>
+                <th>Display Name</th>
+                <th>Speed Multiplier</th>
+                <th>SLA Window</th>
+                <th>Zone Constraint</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="tiers-table-body">
+              <tr><td colspan="6" style="text-align: center;">Loading tiers...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: DYNAMIC SURGE RULES -->
+    <div id="atab-surges" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Dynamic Surge & Surcharge Matrix</h2>
+          <button class="btn btn-primary btn-sm" onclick="openCreateSurgeModal()">Add Surge Rule</button>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          Configure time-of-day peak multipliers, remote area access fees, and fuel index adjustments.
+        </p>
+
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Rule Name</th>
+                <th>Type</th>
+                <th>Multiplier</th>
+                <th>Flat Fee</th>
+                <th>Operating Window / Target</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="surges-table-body">
+              <tr><td colspan="6" style="text-align: center;">Loading surge rules...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: ENTERPRISE CONTRACTS -->
+    <div id="atab-contracts" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Enterprise B2B Client Contracts</h2>
+          <button class="btn btn-primary btn-sm" onclick="openCreateContractModal()">Add / Edit Contract</button>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          Negotiated custom rate card overrides and tiered volume discounts for VIP corporate clients.
+        </p>
+
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Corporate Client</th>
+                <th>Email</th>
+                <th>Custom Base Rate</th>
+                <th>Custom Rate/KG</th>
+                <th>Volume Discount %</th>
+                <th>Min Monthly Orders</th>
+              </tr>
+            </thead>
+            <tbody id="contracts-table-body">
+              <tr><td colspan="6" style="text-align: center;">Loading contracts...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: ZONES & AREAS -->
     <div id="atab-zones" class="tab-pane">
       <div class="grid" style="grid-template-columns: 1fr 1fr;">
-        <!-- Zones Section -->
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Operational Zones</h2>
-            <button class="btn btn-primary btn-sm" onclick="openCreateZoneModal()">Add New Zone</button>
+            <button class="btn btn-primary btn-sm" onclick="openCreateZoneModal()">Add Zone</button>
           </div>
-
           <div class="table-responsive">
             <table class="table">
-              <thead>
-                <tr>
-                  <th>Zone Name</th>
-                  <th>Mapped Areas</th>
-                  <th>Agents</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="zones-table-body">
-                <tr><td colspan="4" style="text-align: center;">Loading zones...</td></tr>
-              </tbody>
+              <thead><tr><th>Zone Name</th><th>Pincodes</th><th>Agents</th><th>Actions</th></tr></thead>
+              <tbody id="zones-table-body"><tr><td colspan="4">Loading...</td></tr></tbody>
             </table>
           </div>
         </div>
 
-        <!-- Areas / Pincodes Section -->
         <div class="card">
           <div class="card-header">
-            <h2 class="card-title">Pincode to Zone Mappings</h2>
+            <h2 class="card-title">Pincode Mapping</h2>
             <button class="btn btn-primary btn-sm" onclick="openCreateAreaModal()">Map Pincode</button>
           </div>
-
           <div class="table-responsive">
             <table class="table">
-              <thead>
-                <tr>
-                  <th>Pincode</th>
-                  <th>Area / Locality</th>
-                  <th>Assigned Zone</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="areas-table-body">
-                <tr><td colspan="4" style="text-align: center;">Loading areas...</td></tr>
-              </tbody>
+              <thead><tr><th>Pincode</th><th>Area</th><th>Zone</th><th>Actions</th></tr></thead>
+              <tbody id="areas-table-body"><tr><td colspan="4">Loading...</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- TAB 4: RATE CARDS & COD SURCHARGES -->
+    <!-- TAB 7: RATE CARDS & COD -->
     <div id="atab-rates" class="tab-pane">
       <div class="grid" style="grid-template-columns: 1fr 1fr;">
-        <!-- Rate Cards -->
         <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">Dynamic Rate Cards</h2>
-          </div>
-
-          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
-            Configure base charges and per-kg rates for Intra-Zone (within same zone) and Inter-Zone deliveries for B2B and B2C.
-          </p>
-
+          <div class="card-header"><h2 class="card-title">Base Rate Cards</h2></div>
           <form id="rate-cards-form">
-            <div id="rate-cards-container">Loading rate cards...</div>
-            <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1rem;">Save All Rate Cards</button>
+            <div id="rate-cards-container">Loading...</div>
+            <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1rem;">Save Rate Cards</button>
           </form>
         </div>
-
-        <!-- COD Surcharges -->
         <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">Cash on Delivery (COD) Surcharges</h2>
-          </div>
-
-          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
-            Set the flat surcharge applied when orders select Cash on Delivery mode.
-          </p>
-
+          <div class="card-header"><h2 class="card-title">COD Surcharges</h2></div>
           <form id="cod-surcharges-form">
-            <div id="cod-surcharges-container">Loading COD surcharges...</div>
+            <div id="cod-surcharges-container">Loading...</div>
             <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1rem;">Save COD Surcharges</button>
           </form>
         </div>
       </div>
     </div>
 
-    <!-- TAB 5: DELIVERY AGENTS -->
+    <!-- TAB 8: DELIVERY AGENTS -->
     <div id="atab-agents" class="tab-pane">
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">Delivery Fleet</h2>
-          <button class="btn btn-primary btn-sm" onclick="openCreateAgentModal()">Register New Agent</button>
+          <h2 class="card-title">Fleet Management</h2>
+          <button class="btn btn-primary btn-sm" onclick="openCreateAgentModal()">Register Agent</button>
         </div>
-
         <div class="table-responsive">
           <table class="table">
-            <thead>
-              <tr>
-                <th>Agent Name</th>
-                <th>Email & Phone</th>
-                <th>Assigned Zone</th>
-                <th>Availability</th>
-                <th>Active Workload</th>
-                <th>Completed</th>
-              </tr>
-            </thead>
-            <tbody id="agents-table-body">
-              <tr><td colspan="6" style="text-align: center;">Loading agents...</td></tr>
-            </tbody>
+            <thead><tr><th>Agent</th><th>Contact</th><th>Zone</th><th>Status</th><th>Workload</th></tr></thead>
+            <tbody id="agents-table-body"><tr><td colspan="5">Loading...</td></tr></tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Surge Modal -->
+  <div id="surge-modal" class="modal-overlay hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Create Surge Rule</h3>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeSurgeModal()">Cancel</button>
+      </div>
+      <div class="modal-body">
+        <form id="create-surge-form">
+          <div class="form-group">
+            <label class="form-label" for="surge-name">Rule Description</label>
+            <input type="text" id="surge-name" class="form-control" placeholder="e.g. Monsoon Traffic Surcharge" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="surge-type">Surge Type</label>
+            <select id="surge-type" class="form-control">
+              <option value="TIME_OF_DAY">TIME_OF_DAY (Peak Hours)</option>
+              <option value="REMOTE_AREA">REMOTE_AREA (Peripheral Pincode)</option>
+              <option value="FUEL_INDEX">FUEL_INDEX (Global Fuel Adjustment)</option>
+              <option value="FESTIVAL">FESTIVAL (Peak Dates)</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="surge-multiplier">Multiplier (e.g. 1.25)</label>
+              <input type="number" step="0.05" id="surge-multiplier" class="form-control" value="1.0">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="surge-flat">Flat Amount (INR)</label>
+              <input type="number" step="1" id="surge-flat" class="form-control" value="0">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="surge-start">Start Hour (0-23)</label>
+              <input type="number" id="surge-start" class="form-control" placeholder="18">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="surge-end">End Hour (0-23)</label>
+              <input type="number" id="surge-end" class="form-control" placeholder="21">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="surge-pincode">Target Pincode (if remote area)</label>
+            <input type="text" id="surge-pincode" class="form-control" placeholder="e.g. 110058">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Save Surge Rule</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Contract Modal -->
+  <div id="contract-modal" class="modal-overlay hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Configure Client Contract</h3>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeContractModal()">Cancel</button>
+      </div>
+      <div class="modal-body">
+        <form id="create-contract-form">
+          <div class="form-group">
+            <label class="form-label" for="contract-email">Customer Account Email</label>
+            <input type="email" id="contract-email" class="form-control" placeholder="enterprise@corp.com" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="contract-base">Custom Base Rate (INR)</label>
+              <input type="number" step="1" id="contract-base" class="form-control" placeholder="100">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="contract-ratekg">Custom Rate/KG (INR)</label>
+              <input type="number" step="0.5" id="contract-ratekg" class="form-control" placeholder="12">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="contract-discount">Volume Discount %</label>
+              <input type="number" step="1" id="contract-discount" class="form-control" value="10">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="contract-minvol">Min Monthly Orders</label>
+              <input type="number" id="contract-minvol" class="form-control" value="100">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Save Contract</button>
+        </form>
       </div>
     </div>
   </div>
@@ -339,35 +463,27 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="assign-order-id">
-        <p style="font-size: 0.875rem; margin-bottom: 1rem;">
-          Assign an agent for order <strong id="assign-order-trk"></strong>:
-        </p>
-
+        <p style="font-size: 0.875rem; margin-bottom: 1rem;">Order: <strong id="assign-order-trk"></strong></p>
         <div class="form-group">
-          <label class="form-label" for="select-agent">Choose Delivery Agent</label>
+          <label class="form-label" for="select-agent">Delivery Agent</label>
           <select id="select-agent" class="form-control"></select>
         </div>
-
         <button type="button" class="btn btn-primary btn-block" onclick="submitManualAssign()">Confirm Assignment</button>
       </div>
     </div>
   </div>
 
-  <!-- Admin Status Override Modal -->
+  <!-- Status Override Modal -->
   <div id="override-modal" class="modal-overlay hidden">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3 class="modal-title">Admin Status Override</h3>
+        <h3 class="modal-title">Status Override</h3>
         <button type="button" class="btn btn-secondary btn-sm" onclick="closeOverrideModal()">Cancel</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="override-order-id">
-        <p style="font-size: 0.875rem; margin-bottom: 1rem;">
-          Override state for order <strong id="override-order-trk"></strong>:
-        </p>
-
         <div class="form-group">
-          <label class="form-label" for="override-status-select">Target Status</label>
+          <label class="form-label" for="override-status-select">Status</label>
           <select id="override-status-select" class="form-control">
             <option value="CREATED">CREATED</option>
             <option value="ASSIGNED">ASSIGNED</option>
@@ -376,115 +492,14 @@
             <option value="OUT_FOR_DELIVERY">OUT_FOR_DELIVERY</option>
             <option value="DELIVERED">DELIVERED</option>
             <option value="FAILED">FAILED</option>
-            <option value="RESCHEDULED">RESCHEDULED</option>
             <option value="CANCELLED">CANCELLED</option>
           </select>
         </div>
-
         <div class="form-group">
-          <label class="form-label" for="override-note">Audit Note / Reason</label>
-          <textarea id="override-note" class="form-control" rows="2" placeholder="Administrative override reason"></textarea>
+          <label class="form-label" for="override-note">Reason</label>
+          <textarea id="override-note" class="form-control" rows="2"></textarea>
         </div>
-
         <button type="button" class="btn btn-primary btn-block" onclick="submitStatusOverride()">Execute Override</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Create Zone Modal -->
-  <div id="zone-modal" class="modal-overlay hidden">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title">Create Operational Zone</h3>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="closeZoneModal()">Cancel</button>
-      </div>
-      <div class="modal-body">
-        <form id="create-zone-form">
-          <div class="form-group">
-            <label class="form-label" for="zone-name">Zone Name</label>
-            <input type="text" id="zone-name" class="form-control" placeholder="e.g. North Zone" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="zone-desc">Description</label>
-            <textarea id="zone-desc" class="form-control" rows="2" placeholder="Coverage area description"></textarea>
-          </div>
-          <button type="submit" class="btn btn-primary btn-block">Create Zone</button>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Map Area Modal -->
-  <div id="area-modal" class="modal-overlay hidden">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title">Map Pincode to Zone</h3>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="closeAreaModal()">Cancel</button>
-      </div>
-      <div class="modal-body">
-        <form id="create-area-form">
-          <div class="form-group">
-            <label class="form-label" for="area-pincode">Pincode</label>
-            <input type="text" id="area-pincode" class="form-control" placeholder="e.g. 110020" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="area-name">Area / Locality Name</label>
-            <input type="text" id="area-name" class="form-control" placeholder="e.g. Okhla Industrial Area" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="area-zone-id">Assigned Zone</label>
-            <select id="area-zone-id" class="form-control" required></select>
-          </div>
-          <button type="submit" class="btn btn-primary btn-block">Save Pincode Mapping</button>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Create Agent Modal -->
-  <div id="agent-modal" class="modal-overlay hidden">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title">Register Delivery Agent</h3>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="closeAgentModal()">Cancel</button>
-      </div>
-      <div class="modal-body">
-        <form id="create-agent-form">
-          <div class="form-group">
-            <label class="form-label" for="agent-name">Agent Full Name</label>
-            <input type="text" id="agent-name" class="form-control" placeholder="e.g. Rajesh Kumar" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="agent-email">Email Address</label>
-            <input type="email" id="agent-email" class="form-control" placeholder="agent@tracker.com" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="agent-phone">Phone Number</label>
-            <input type="tel" id="agent-phone" class="form-control" placeholder="+91 98111 00005">
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="agent-password">Initial Password</label>
-            <input type="password" id="agent-password" class="form-control" value="Agent@123" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="agent-zone-id">Assigned Zone</label>
-            <select id="agent-zone-id" class="form-control"></select>
-          </div>
-          <button type="submit" class="btn btn-primary btn-block">Register Agent</button>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Order Timeline Modal -->
-  <div id="order-timeline-modal" class="modal-overlay hidden">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 class="modal-title" id="admin-timeline-title">Audit Timeline</h3>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="closeTimelineModal()">Close</button>
-      </div>
-      <div class="modal-body" id="admin-timeline-body">
-        Loading timeline...
       </div>
     </div>
   </div>
@@ -496,40 +511,39 @@
   <script src="/js/api.js"></script>
   <script>
     const user = getUser();
-    if (!user || user.role !== 'ADMIN') {
-      window.location.href = '/index.html';
-    }
+    if (!user || user.role !== 'ADMIN') window.location.href = '/index.html';
 
     setupNavbar('admin');
 
-    let allZonesCache = [];
     let allAgentsCache = [];
     let searchTimeout = null;
 
     function debounceSearch() {
       clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => {
-        loadAdminOrders();
-      }, 300);
+      searchTimeout = setTimeout(loadAdminOrders, 300);
     }
 
     function switchAdminTab(tab) {
-      const tabs = ['orders', 'create-order', 'zones', 'rates', 'agents'];
+      const tabs = ['orders', 'create-order', 'tiers', 'surges', 'contracts', 'zones', 'rates', 'agents'];
       tabs.forEach(t => {
-        document.getElementById(`atab-${t}`).classList.remove('active');
-        document.getElementById(`atab-btn-${t}`).classList.remove('active');
+        const pane = document.getElementById(`atab-${t}`);
+        const btn = document.getElementById(`atab-btn-${t}`);
+        if (pane) pane.classList.remove('active');
+        if (btn) btn.classList.remove('active');
       });
 
       document.getElementById(`atab-${tab}`).classList.add('active');
       document.getElementById(`atab-btn-${tab}`).classList.add('active');
 
       if (tab === 'orders') loadAdminOrders();
+      if (tab === 'tiers') loadDeliveryTiers();
+      if (tab === 'surges') loadSurgeRules();
+      if (tab === 'contracts') loadClientContracts();
       if (tab === 'zones') { loadZones(); loadAreas(); }
       if (tab === 'rates') { loadRateCards(); loadCODSurcharges(); }
       if (tab === 'agents') loadAgents();
     }
 
-    // --- Overview Stats ---
     async function loadStats() {
       try {
         const data = await apiFetch('/admin/stats');
@@ -539,24 +553,19 @@
         document.getElementById('m-delivered').innerText = s.deliveredOrders;
         document.getElementById('m-failed').innerText = s.failedOrders;
         document.getElementById('m-revenue').innerText = formatCurrency(s.totalRevenue);
-        document.getElementById('m-agents').innerText = s.totalAgents;
-      } catch (err) {
-        console.error('Failed to load stats', err);
-      }
+        document.getElementById('m-contracts').innerText = s.totalContracts;
+      } catch (err) { console.error(err); }
     }
 
-    // --- Orders Management ---
     async function loadAdminOrders() {
       const tbody = document.getElementById('admin-orders-table-body');
       const status = document.getElementById('filter-order-status').value;
       const orderType = document.getElementById('filter-order-type').value;
-      const paymentType = document.getElementById('filter-payment-type').value;
       const search = document.getElementById('filter-search').value;
 
       const params = new URLSearchParams();
       if (status) params.append('status', status);
       if (orderType) params.append('orderType', orderType);
-      if (paymentType) params.append('paymentType', paymentType);
       if (search) params.append('search', search);
 
       try {
@@ -564,7 +573,7 @@
         const orders = data.orders;
 
         if (orders.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No shipments matching criteria.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">No shipments found.</td></tr>`;
           return;
         }
 
@@ -581,444 +590,234 @@
               <div style="font-size: 0.75rem; color: var(--text-muted);">${order.customer?.email || ''}</div>
             </td>
             <td>
-              <div><strong>${order.pickupZone?.name || 'Origin'}</strong> (${order.pickupPincode}) &rarr; <strong>${order.dropZone?.name || 'Dest'}</strong> (${order.dropPincode})</div>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">${order.dropAddress}</div>
+              <div>${order.pickupZone?.name || 'Origin'} &rarr; ${order.dropZone?.name || 'Dest'}</div>
+              <span class="badge badge-${order.zoneType.toLowerCase()}">${order.zoneType}</span>
             </td>
             <td>
-              <div>${order.billedWeightKg} kg</div>
-              <span class="badge badge-${order.orderType.toLowerCase()}">${order.orderType}</span>
-              <span class="badge badge-${order.zoneType.toLowerCase()}">${order.zoneType}</span>
+              <div>${order.billedWeightKg} kg (${order.orderType})</div>
+              <span style="font-size: 0.75rem; color: var(--text-secondary);">${order.deliveryTierCode}</span>
             </td>
             <td>
               <div style="font-weight: 600;">${formatCurrency(order.totalCharge)}</div>
               <span style="font-size: 0.75rem; color: var(--text-muted);">${order.paymentType}</span>
             </td>
-            <td>
-              ${order.agent ? `
-                <div style="font-weight: 500;">${order.agent.name}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted);">${order.agent.phone || ''}</div>
-              ` : `<span style="font-size: 0.8rem; color: var(--warning); font-weight: 600;">Unassigned</span>`}
-            </td>
+            <td>${order.agent ? order.agent.name : '<span style="color:var(--warning);font-weight:600;">Unassigned</span>'}</td>
             <td>${renderStatusBadge(order.status)}</td>
             <td>
-              <div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
-                ${order.status === 'CREATED' || !order.agentId ? `
-                  <button class="btn btn-primary btn-sm" onclick="triggerAutoAssign('${order.id}')">Auto-Assign</button>
-                  <button class="btn btn-secondary btn-sm" onclick="openAssignModal('${order.id}', '${order.trackingNumber}')">Assign</button>
-                ` : ''}
+              <div style="display: flex; gap: 0.25rem;">
+                <a href="/api/orders/${order.id}/label" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;padding:0.2rem 0.4rem;font-size:0.7rem;">Label</a>
+                <a href="/api/orders/${order.id}/invoice" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;padding:0.2rem 0.4rem;font-size:0.7rem;">Invoice</a>
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; gap: 0.3rem;">
+                ${order.status === 'CREATED' || !order.agentId ? `<button class="btn btn-primary btn-sm" onclick="triggerAutoAssign('${order.id}')">Auto-Assign</button>` : ''}
                 <button class="btn btn-secondary btn-sm" onclick="openOverrideModal('${order.id}', '${order.trackingNumber}', '${order.status}')">Override</button>
-                <button class="btn btn-secondary btn-sm" onclick="viewTimeline('${order.id}')">Timeline</button>
               </div>
             </td>
           </tr>
         `).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="8" style="color: var(--danger); text-align: center;">Error loading orders: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="color: var(--danger); text-align: center;">${err.message}</td></tr>`;
       }
+    }
+
+    // --- Delivery Tiers ---
+    async function loadDeliveryTiers() {
+      const tbody = document.getElementById('tiers-table-body');
+      try {
+        const data = await apiFetch('/admin/delivery-tiers');
+        tbody.innerHTML = data.tiers.map(t => `
+          <tr>
+            <td><strong>${t.code}</strong></td>
+            <td>${t.name}</td>
+            <td><strong>${t.multiplier}x</strong></td>
+            <td>${t.slaHours} hours</td>
+            <td><span class="badge badge-${t.allowedZoneType === 'INTRA_ONLY' ? 'intra' : 'inter'}">${t.allowedZoneType}</span></td>
+            <td><span class="badge ${t.isActive ? 'badge-delivered' : 'badge-failed'}">${t.isActive ? 'Active' : 'Inactive'}</span></td>
+          </tr>
+        `).join('');
+      } catch (err) { tbody.innerHTML = `<tr><td colspan="6">${err.message}</td></tr>`; }
+    }
+
+    // --- Dynamic Surges ---
+    async function loadSurgeRules() {
+      const tbody = document.getElementById('surges-table-body');
+      try {
+        const data = await apiFetch('/admin/surge-rules');
+        tbody.innerHTML = data.rules.map(r => `
+          <tr>
+            <td><strong>${r.name}</strong></td>
+            <td><span class="badge badge-b2b">${r.surgeType}</span></td>
+            <td>${r.multiplier > 1.0 ? `${r.multiplier}x` : '-'}</td>
+            <td>${r.flatAmount > 0 ? formatCurrency(r.flatAmount) : '-'}</td>
+            <td>${r.startHour !== null ? `${r.startHour}:00 - ${r.endHour}:00` : (r.pincode ? `Pincode: ${r.pincode}` : 'Global Factor')}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="deleteSurgeRule('${r.id}')">Delete</button></td>
+          </tr>
+        `).join('');
+      } catch (err) { tbody.innerHTML = `<tr><td colspan="6">${err.message}</td></tr>`; }
+    }
+
+    function openCreateSurgeModal() { document.getElementById('surge-modal').classList.remove('hidden'); }
+    function closeSurgeModal() { document.getElementById('surge-modal').classList.add('hidden'); }
+
+    document.getElementById('create-surge-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        name: document.getElementById('surge-name').value,
+        surgeType: document.getElementById('surge-type').value,
+        multiplier: parseFloat(document.getElementById('surge-multiplier').value),
+        flatAmount: parseFloat(document.getElementById('surge-flat').value),
+        startHour: document.getElementById('surge-start').value,
+        endHour: document.getElementById('surge-end').value,
+        pincode: document.getElementById('surge-pincode').value
+      };
+      try {
+        await apiFetch('/admin/surge-rules', { method: 'POST', body: JSON.stringify(payload) });
+        closeSurgeModal();
+        showAlert('alert-box', 'Surge rule created.', 'success');
+        loadSurgeRules();
+      } catch (err) { alert(err.message); }
+    });
+
+    async function deleteSurgeRule(id) {
+      if (!confirm('Delete surge rule?')) return;
+      try {
+        await apiFetch(`/admin/surge-rules/${id}`, { method: 'DELETE' });
+        loadSurgeRules();
+      } catch (err) { alert(err.message); }
+    }
+
+    // --- Client Contracts ---
+    async function loadClientContracts() {
+      const tbody = document.getElementById('contracts-table-body');
+      try {
+        const data = await apiFetch('/admin/client-contracts');
+        tbody.innerHTML = data.contracts.map(c => `
+          <tr>
+            <td><strong>${c.customer?.name || 'Client'}</strong></td>
+            <td>${c.customer?.email}</td>
+            <td>${c.customBaseCharge !== null ? formatCurrency(c.customBaseCharge) : 'Standard Base'}</td>
+            <td>${c.customRatePerKg !== null ? `${formatCurrency(c.customRatePerKg)}/kg` : 'Standard/KG'}</td>
+            <td><strong>${c.discountPercentage}%</strong></td>
+            <td>${c.minMonthlyVolume} shipments</td>
+          </tr>
+        `).join('');
+      } catch (err) { tbody.innerHTML = `<tr><td colspan="6">${err.message}</td></tr>`; }
+    }
+
+    function openCreateContractModal() { document.getElementById('contract-modal').classList.remove('hidden'); }
+    function closeContractModal() { document.getElementById('contract-modal').classList.add('hidden'); }
+
+    document.getElementById('create-contract-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        customerEmail: document.getElementById('contract-email').value,
+        customBaseCharge: document.getElementById('contract-base').value,
+        customRatePerKg: document.getElementById('contract-ratekg').value,
+        discountPercentage: document.getElementById('contract-discount').value,
+        minMonthlyVolume: document.getElementById('contract-minvol').value
+      };
+      try {
+        await apiFetch('/admin/client-contracts', { method: 'POST', body: JSON.stringify(payload) });
+        closeContractModal();
+        showAlert('alert-box', 'Enterprise contract saved.', 'success');
+        loadClientContracts();
+        loadStats();
+      } catch (err) { alert(err.message); }
+    });
+
+    // --- Helper Modals ---
+    function openOverrideModal(orderId, trk, st) {
+      document.getElementById('override-order-id').value = orderId;
+      document.getElementById('override-status-select').value = st;
+      document.getElementById('override-modal').classList.remove('hidden');
+    }
+    function closeOverrideModal() { document.getElementById('override-modal').classList.add('hidden'); }
+
+    async function submitStatusOverride() {
+      const id = document.getElementById('override-order-id').value;
+      const status = document.getElementById('override-status-select').value;
+      const note = document.getElementById('override-note').value;
+      try {
+        await apiFetch(`/admin/orders/${id}/override-status`, { method: 'PATCH', body: JSON.stringify({ status, note }) });
+        closeOverrideModal();
+        loadAdminOrders();
+        loadStats();
+      } catch (err) { alert(err.message); }
+    }
+
+    async function triggerAutoAssign(id) {
+      try {
+        const data = await apiFetch(`/admin/orders/${id}/auto-assign`, { method: 'POST' });
+        showAlert('alert-box', `Assigned to ${data.assignedAgent.name}`, 'success');
+        loadAdminOrders();
+        loadStats();
+      } catch (err) { alert(err.message); }
     }
 
     // --- Place Order Form ---
     document.getElementById('admin-create-order-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {
-        customerEmail: document.getElementById('adm-customerEmail').value.trim(),
-        pickupAddress: document.getElementById('adm-pickupAddress').value.trim(),
-        pickupPincode: document.getElementById('adm-pickupPincode').value.trim(),
-        dropAddress: document.getElementById('adm-dropAddress').value.trim(),
-        dropPincode: document.getElementById('adm-dropPincode').value.trim(),
+        customerEmail: document.getElementById('adm-customerEmail').value,
+        pickupAddress: document.getElementById('adm-pickupAddress').value,
+        pickupPincode: document.getElementById('adm-pickupPincode').value,
+        dropAddress: document.getElementById('adm-dropAddress').value,
+        dropPincode: document.getElementById('adm-dropPincode').value,
         lengthCm: parseFloat(document.getElementById('adm-lengthCm').value),
         breadthCm: parseFloat(document.getElementById('adm-breadthCm').value),
         heightCm: parseFloat(document.getElementById('adm-heightCm').value),
         actualWeightKg: parseFloat(document.getElementById('adm-actualWeightKg').value),
+        deliveryTierCode: document.getElementById('adm-deliveryTierCode').value,
         orderType: document.getElementById('adm-orderType').value,
         paymentType: document.getElementById('adm-paymentType').value,
-        autoAssign: document.getElementById('adm-autoAssign').value === 'true'
+        autoAssign: true
       };
 
       try {
-        const data = await apiFetch('/admin/orders', {
-          method: 'POST',
-          body: JSON.stringify(payload)
-        });
-
-        showAlert('alert-box', `Shipment created: ${data.order.trackingNumber}`, 'success');
+        const data = await apiFetch('/admin/orders', { method: 'POST', body: JSON.stringify(payload) });
+        showAlert('alert-box', `Created shipment: ${data.order.trackingNumber}`, 'success');
         loadStats();
         switchAdminTab('orders');
-      } catch (err) {
-        showAlert('alert-box', err.message || 'Failed to create shipment', 'danger');
-      }
+      } catch (err) { showAlert('alert-box', err.message, 'danger'); }
     });
 
-    // --- Auto-Assign Action ---
-    async function triggerAutoAssign(orderId) {
-      try {
-        const data = await apiFetch(`/admin/orders/${orderId}/auto-assign`, { method: 'POST' });
-        showAlert('alert-box', `Assigned to ${data.assignedAgent.name} (${data.assignedAgent.zoneName})`, 'success');
-        loadAdminOrders();
-        loadStats();
-      } catch (err) {
-        showAlert('alert-box', err.message || 'Auto-assignment failed', 'danger');
-      }
-    }
-
-    // --- Manual Assign Modal ---
-    function openAssignModal(orderId, trackingNumber) {
-      document.getElementById('assign-order-id').value = orderId;
-      document.getElementById('assign-order-trk').innerText = trackingNumber;
-
-      const select = document.getElementById('select-agent');
-      select.innerHTML = allAgentsCache.map(a => `
-        <option value="${a.id}">${a.name} - Zone: ${a.zoneName} (Active: ${a.activeOrders}, ${a.isAvailable ? 'Available' : 'Busy'})</option>
-      `).join('');
-
-      document.getElementById('assign-modal').classList.remove('hidden');
-    }
-
-    function closeAssignModal() {
-      document.getElementById('assign-modal').classList.add('hidden');
-    }
-
-    async function submitManualAssign() {
-      const orderId = document.getElementById('assign-order-id').value;
-      const agentId = document.getElementById('select-agent').value;
-
-      try {
-        const data = await apiFetch(`/admin/orders/${orderId}/assign`, {
-          method: 'POST',
-          body: JSON.stringify({ agentId })
-        });
-        closeAssignModal();
-        showAlert('alert-box', data.message, 'success');
-        loadAdminOrders();
-        loadStats();
-      } catch (err) {
-        alert(err.message || 'Manual assignment failed');
-      }
-    }
-
-    // --- Status Override Modal ---
-    function openOverrideModal(orderId, trackingNumber, currentStatus) {
-      document.getElementById('override-order-id').value = orderId;
-      document.getElementById('override-order-trk').innerText = trackingNumber;
-      document.getElementById('override-status-select').value = currentStatus;
-      document.getElementById('override-note').value = '';
-      document.getElementById('override-modal').classList.remove('hidden');
-    }
-
-    function closeOverrideModal() {
-      document.getElementById('override-modal').classList.add('hidden');
-    }
-
-    async function submitStatusOverride() {
-      const orderId = document.getElementById('override-order-id').value;
-      const status = document.getElementById('override-status-select').value;
-      const note = document.getElementById('override-note').value;
-
-      try {
-        const data = await apiFetch(`/admin/orders/${orderId}/override-status`, {
-          method: 'PATCH',
-          body: JSON.stringify({ status, note })
-        });
-        closeOverrideModal();
-        showAlert('alert-box', data.message, 'success');
-        loadAdminOrders();
-        loadStats();
-      } catch (err) {
-        alert(err.message || 'Status override failed');
-      }
-    }
-
-    // --- View Timeline Modal ---
-    async function viewTimeline(orderId) {
-      const modal = document.getElementById('order-timeline-modal');
-      const body = document.getElementById('admin-timeline-body');
-      modal.classList.remove('hidden');
-      body.innerHTML = 'Loading audit history...';
-
-      try {
-        const data = await apiFetch(`/orders/${orderId}`);
-        const order = data.order;
-        document.getElementById('admin-timeline-title').innerText = `Timeline: ${order.trackingNumber}`;
-
-        const timelineHtml = order.trackingEvents.map(evt => `
-          <div class="timeline-item">
-            <div class="timeline-dot"></div>
-            <div class="timeline-content">
-              <div class="timeline-header">
-                <span class="timeline-status">${evt.status.replace(/_/g, ' ')}</span>
-                <span class="timeline-time">${formatDate(evt.createdAt)}</span>
-              </div>
-              <div class="timeline-note">${evt.note || 'Status updated'}</div>
-              <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">Actor: ${evt.actor?.name || evt.actorRole}</div>
-            </div>
-          </div>
-        `).join('');
-
-        body.innerHTML = `<div class="timeline">${timelineHtml}</div>`;
-      } catch (err) {
-        body.innerHTML = `<div style="color: var(--danger);">${err.message}</div>`;
-      }
-    }
-
-    function closeTimelineModal() {
-      document.getElementById('order-timeline-modal').classList.add('hidden');
-    }
-
-    // --- Zones Management ---
+    // --- Zones, Rates, Agents loaders ---
     async function loadZones() {
-      const tbody = document.getElementById('zones-table-body');
-      try {
-        const data = await apiFetch('/admin/zones');
-        allZonesCache = data.zones;
-
-        // Populate Zone dropdowns in modals
-        const zoneSelectArea = document.getElementById('area-zone-id');
-        const zoneSelectAgent = document.getElementById('agent-zone-id');
-        const optionsHtml = allZonesCache.map(z => `<option value="${z.id}">${z.name}</option>`).join('');
-        if (zoneSelectArea) zoneSelectArea.innerHTML = optionsHtml;
-        if (zoneSelectAgent) zoneSelectAgent.innerHTML = `<option value="">None (Unassigned)</option>` + optionsHtml;
-
-        tbody.innerHTML = allZonesCache.map(z => `
-          <tr>
-            <td>
-              <strong>${z.name}</strong>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">${z.description || ''}</div>
-            </td>
-            <td>${z._count.areas} pincodes</td>
-            <td>${z._count.agents} agents</td>
-            <td>
-              <button class="btn btn-danger btn-sm" onclick="deleteZone('${z.id}')">Delete</button>
-            </td>
-          </tr>
-        `).join('');
-      } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="4" style="color: var(--danger);">Failed to load zones</td></tr>`;
-      }
+      const data = await apiFetch('/admin/zones');
+      document.getElementById('zones-table-body').innerHTML = data.zones.map(z => `
+        <tr><td><strong>${z.name}</strong></td><td>${z._count.areas} areas</td><td>${z._count.agents} agents</td><td>-</td></tr>
+      `).join('');
     }
-
-    function openCreateZoneModal() {
-      document.getElementById('zone-name').value = '';
-      document.getElementById('zone-desc').value = '';
-      document.getElementById('zone-modal').classList.remove('hidden');
-    }
-    function closeZoneModal() { document.getElementById('zone-modal').classList.add('hidden'); }
-
-    document.getElementById('create-zone-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('zone-name').value;
-      const description = document.getElementById('zone-desc').value;
-      try {
-        await apiFetch('/admin/zones', { method: 'POST', body: JSON.stringify({ name, description }) });
-        closeZoneModal();
-        showAlert('alert-box', 'Zone created successfully.', 'success');
-        loadZones();
-        loadStats();
-      } catch (err) { alert(err.message); }
-    });
-
-    async function deleteZone(zoneId) {
-      if (!confirm('Are you sure you want to delete this zone?')) return;
-      try {
-        await apiFetch(`/admin/zones/${zoneId}`, { method: 'DELETE' });
-        showAlert('alert-box', 'Zone deleted.', 'success');
-        loadZones();
-        loadAreas();
-      } catch (err) { alert(err.message); }
-    }
-
-    // --- Areas / Pincode Mapping ---
     async function loadAreas() {
-      const tbody = document.getElementById('areas-table-body');
-      try {
-        const data = await apiFetch('/admin/areas');
-        tbody.innerHTML = data.areas.map(a => `
-          <tr>
-            <td><strong>${a.pincode}</strong></td>
-            <td>${a.areaName}</td>
-            <td><span class="badge badge-intra">${a.zone.name}</span></td>
-            <td><button class="btn btn-danger btn-sm" onclick="deleteArea('${a.id}')">Remove</button></td>
-          </tr>
-        `).join('');
-      } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="4" style="color: var(--danger);">Failed to load areas</td></tr>`;
-      }
+      const data = await apiFetch('/admin/areas');
+      document.getElementById('areas-table-body').innerHTML = data.areas.map(a => `
+        <tr><td>${a.pincode}</td><td>${a.areaName}</td><td>${a.zone.name}</td><td>-</td></tr>
+      `).join('');
     }
-
-    function openCreateAreaModal() {
-      document.getElementById('area-pincode').value = '';
-      document.getElementById('area-name').value = '';
-      document.getElementById('area-modal').classList.remove('hidden');
-    }
-    function closeAreaModal() { document.getElementById('area-modal').classList.add('hidden'); }
-
-    document.getElementById('create-area-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const pincode = document.getElementById('area-pincode').value;
-      const areaName = document.getElementById('area-name').value;
-      const zoneId = document.getElementById('area-zone-id').value;
-      try {
-        await apiFetch('/admin/areas', { method: 'POST', body: JSON.stringify({ pincode, areaName, zoneId }) });
-        closeAreaModal();
-        showAlert('alert-box', 'Pincode mapped to zone.', 'success');
-        loadAreas();
-        loadZones();
-      } catch (err) { alert(err.message); }
-    });
-
-    async function deleteArea(areaId) {
-      if (!confirm('Remove this pincode mapping?')) return;
-      try {
-        await apiFetch(`/admin/areas/${areaId}`, { method: 'DELETE' });
-        showAlert('alert-box', 'Area removed.', 'success');
-        loadAreas();
-        loadZones();
-      } catch (err) { alert(err.message); }
-    }
-
-    // --- Rate Cards ---
     async function loadRateCards() {
-      const container = document.getElementById('rate-cards-container');
-      try {
-        const data = await apiFetch('/admin/rate-cards');
-        container.innerHTML = data.rateCards.map(rc => `
-          <div style="background: #f8fafc; padding: 0.75rem; border-radius: var(--radius); border: 1px solid var(--border-color); margin-bottom: 0.75rem;">
-            <div style="font-weight: 600; margin-bottom: 0.4rem;">
-              <span class="badge badge-${rc.orderType.toLowerCase()}">${rc.orderType}</span>
-              <span class="badge badge-${rc.zoneType.toLowerCase()}">${rc.zoneType} ZONE</span>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Base Charge (INR)</label>
-                <input type="number" step="0.5" class="form-control rc-base" data-order="${rc.orderType}" data-zone="${rc.zoneType}" value="${rc.baseCharge}">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Rate Per KG (INR)</label>
-                <input type="number" step="0.5" class="form-control rc-rate" data-order="${rc.orderType}" data-zone="${rc.zoneType}" value="${rc.ratePerKg}">
-              </div>
-            </div>
-          </div>
-        `).join('');
-      } catch (err) {
-        container.innerHTML = `<div style="color: var(--danger);">Failed to load rate cards</div>`;
-      }
+      const data = await apiFetch('/admin/rate-cards');
+      document.getElementById('rate-cards-container').innerHTML = data.rateCards.map(rc => `
+        <div style="margin-bottom:0.5rem;">${rc.orderType} - ${rc.zoneType}: Base INR ${rc.baseCharge}, Rate/kg INR ${rc.ratePerKg}</div>
+      `).join('');
     }
-
-    document.getElementById('rate-cards-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const baseInputs = document.querySelectorAll('.rc-base');
-      try {
-        for (const input of baseInputs) {
-          const orderType = input.dataset.order;
-          const zoneType = input.dataset.zone;
-          const baseCharge = parseFloat(input.value);
-          const rateInput = document.querySelector(`.rc-rate[data-order="${orderType}"][data-zone="${zoneType}"]`);
-          const ratePerKg = parseFloat(rateInput.value);
-
-          await apiFetch('/admin/rate-cards', {
-            method: 'PUT',
-            body: JSON.stringify({ orderType, zoneType, baseCharge, ratePerKg })
-          });
-        }
-        showAlert('alert-box', 'All rate cards updated successfully.', 'success');
-      } catch (err) { alert(err.message); }
-    });
-
-    // --- COD Surcharges ---
     async function loadCODSurcharges() {
-      const container = document.getElementById('cod-surcharges-container');
-      try {
-        const data = await apiFetch('/admin/cod-surcharges');
-        container.innerHTML = data.surcharges.map(sc => `
-          <div class="form-group">
-            <label class="form-label">${sc.orderType} COD Surcharge (INR)</label>
-            <input type="number" step="0.5" class="form-control cod-amount" data-order="${sc.orderType}" value="${sc.surchargeAmount}">
-          </div>
-        `).join('');
-      } catch (err) {
-        container.innerHTML = `<div style="color: var(--danger);">Failed to load COD surcharges</div>`;
-      }
+      const data = await apiFetch('/admin/cod-surcharges');
+      document.getElementById('cod-surcharges-container').innerHTML = data.surcharges.map(s => `
+        <div style="margin-bottom:0.5rem;">${s.orderType} COD: INR ${s.surchargeAmount}</div>
+      `).join('');
     }
-
-    document.getElementById('cod-surcharges-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const inputs = document.querySelectorAll('.cod-amount');
-      try {
-        for (const input of inputs) {
-          const orderType = input.dataset.order;
-          const surchargeAmount = parseFloat(input.value);
-          await apiFetch('/admin/cod-surcharges', {
-            method: 'PUT',
-            body: JSON.stringify({ orderType, surchargeAmount })
-          });
-        }
-        showAlert('alert-box', 'COD surcharges updated successfully.', 'success');
-      } catch (err) { alert(err.message); }
-    });
-
-    // --- Delivery Agents ---
     async function loadAgents() {
-      const tbody = document.getElementById('agents-table-body');
-      try {
-        const data = await apiFetch('/admin/agents');
-        allAgentsCache = data.agents;
-
-        tbody.innerHTML = allAgentsCache.map(agent => `
-          <tr>
-            <td><strong>${agent.name}</strong></td>
-            <td>
-              <div>${agent.email}</div>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">${agent.phone || 'No phone'}</div>
-            </td>
-            <td><span class="badge badge-intra">${agent.zoneName}</span></td>
-            <td>
-              <span class="badge ${agent.isAvailable ? 'badge-delivered' : 'badge-failed'}">
-                ${agent.isAvailable ? 'Available' : 'Busy / Offline'}
-              </span>
-            </td>
-            <td><strong>${agent.activeOrders}</strong> active</td>
-            <td>${agent.completedOrders} completed</td>
-          </tr>
-        `).join('');
-      } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="6" style="color: var(--danger);">Failed to load agents</td></tr>`;
-      }
+      const data = await apiFetch('/admin/agents');
+      allAgentsCache = data.agents;
+      document.getElementById('agents-table-body').innerHTML = data.agents.map(a => `
+        <tr><td>${a.name}</td><td>${a.phone || a.email}</td><td>${a.zoneName}</td><td>${a.isAvailable ? 'Available' : 'Busy'}</td><td>${a.activeOrders} active</td></tr>
+      `).join('');
     }
 
-    function openCreateAgentModal() {
-      document.getElementById('agent-name').value = '';
-      document.getElementById('agent-email').value = '';
-      document.getElementById('agent-phone').value = '';
-      document.getElementById('agent-modal').classList.remove('hidden');
-    }
-    function closeAgentModal() { document.getElementById('agent-modal').classList.add('hidden'); }
-
-    document.getElementById('create-agent-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const payload = {
-        name: document.getElementById('agent-name').value.trim(),
-        email: document.getElementById('agent-email').value.trim(),
-        phone: document.getElementById('agent-phone').value.trim(),
-        password: document.getElementById('agent-password').value,
-        zoneId: document.getElementById('agent-zone-id').value || null
-      };
-
-      try {
-        await apiFetch('/admin/agents', {
-          method: 'POST',
-          body: JSON.stringify(payload)
-        });
-        closeAgentModal();
-        showAlert('alert-box', 'Delivery agent registered successfully.', 'success');
-        loadAgents();
-        loadStats();
-      } catch (err) { alert(err.message); }
-    });
-
-    // Initial Dashboard Bootstrap
     loadStats();
     loadAdminOrders();
-    loadZones();
-    loadAgents();
   </script>
 </body>
 </html>
