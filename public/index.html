@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Last-Mile Delivery Tracker - Login</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="container" style="max-width: 520px; margin-top: 3rem;">
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title" id="auth-title">Account Login</h2>
+      </div>
+
+      <div id="alert-box" class="hidden"></div>
+
+      <!-- Quick Demo Account Fillers -->
+      <div style="background: #f1f5f9; padding: 0.75rem; border-radius: var(--radius); margin-bottom: 1rem;">
+        <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.4rem;">
+          Quick Demo Credentials
+        </div>
+        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="fillCredentials('admin@tracker.com', 'Admin@123')">Admin</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="fillCredentials('customer@tracker.com', 'Customer@123')">Customer (Priya)</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="fillCredentials('agent.north@tracker.com', 'Agent@123')">Agent (North)</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="fillCredentials('agent.south@tracker.com', 'Agent@123')">Agent (South)</button>
+        </div>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="login-email">Email Address</label>
+          <input type="email" id="login-email" class="form-control" placeholder="name@domain.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="login-password">Password</label>
+          <input type="password" id="login-password" class="form-control" placeholder="Enter password" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="login-submit-btn">Sign In</button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" class="hidden">
+        <div class="form-group">
+          <label class="form-label" for="reg-name">Full Name / Organization</label>
+          <input type="text" id="reg-name" class="form-control" placeholder="e.g. Acme Corp or Jane Doe" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reg-email">Email Address</label>
+          <input type="email" id="reg-email" class="form-control" placeholder="name@domain.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reg-phone">Phone Number</label>
+          <input type="tel" id="reg-phone" class="form-control" placeholder="+91 98765 43210">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reg-password">Password</label>
+          <input type="password" id="reg-password" class="form-control" placeholder="Create password" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="reg-submit-btn">Create Account</button>
+      </form>
+
+      <div style="margin-top: 1.25rem; text-align: center; font-size: 0.875rem;">
+        <span id="auth-switch-text">Do not have an account?</span>
+        <button type="button" id="auth-switch-btn" class="btn btn-sm" style="background:none;border:none;color:var(--primary);font-weight:600;padding:0;margin-left:0.25rem;cursor:pointer;">
+          Register as Customer
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    Last-Mile Delivery Management Platform &copy; 2026. All rights reserved.
+  </footer>
+
+  <script src="/js/api.js"></script>
+  <script>
+    setupNavbar('login');
+
+    const user = getUser();
+    if (user) {
+      if (user.role === 'ADMIN') window.location.href = '/admin.html';
+      else if (user.role === 'AGENT') window.location.href = '/agent.html';
+      else window.location.href = '/customer.html';
+    }
+
+    let isRegisterMode = false;
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const authTitle = document.getElementById('auth-title');
+    const authSwitchText = document.getElementById('auth-switch-text');
+    const authSwitchBtn = document.getElementById('auth-switch-btn');
+
+    authSwitchBtn.addEventListener('click', () => {
+      isRegisterMode = !isRegisterMode;
+      if (isRegisterMode) {
+        loginForm.classList.add('hidden');
+        registerForm.classList.remove('hidden');
+        authTitle.innerText = 'Customer Registration';
+        authSwitchText.innerText = 'Already have an account?';
+        authSwitchBtn.innerText = 'Sign In';
+      } else {
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+        authTitle.innerText = 'Account Login';
+        authSwitchText.innerText = 'Do not have an account?';
+        authSwitchBtn.innerText = 'Register as Customer';
+      }
+    });
+
+    function fillCredentials(email, password) {
+      if (isRegisterMode) {
+        authSwitchBtn.click();
+      }
+      document.getElementById('login-email').value = email;
+      document.getElementById('login-password').value = password;
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+
+      try {
+        const data = await apiFetch('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
+        });
+
+        setToken(data.token);
+        setUser(data.user);
+
+        if (data.user.role === 'ADMIN') window.location.href = '/admin.html';
+        else if (data.user.role === 'AGENT') window.location.href = '/agent.html';
+        else window.location.href = '/customer.html';
+      } catch (err) {
+        showAlert('alert-box', err.message || 'Login failed', 'danger');
+      }
+    });
+
+    registerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('reg-name').value;
+      const email = document.getElementById('reg-email').value;
+      const phone = document.getElementById('reg-phone').value;
+      const password = document.getElementById('reg-password').value;
+
+      try {
+        const data = await apiFetch('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ name, email, phone, password, role: 'CUSTOMER' })
+        });
+
+        setToken(data.token);
+        setUser(data.user);
+        window.location.href = '/customer.html';
+      } catch (err) {
+        showAlert('alert-box', err.message || 'Registration failed', 'danger');
+      }
+    });
+  </script>
+</body>
+</html>

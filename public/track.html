@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Track Your Shipment - Last-Mile Tracker</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="container" style="max-width: 760px;">
+    <div class="page-header" style="justify-content: center; text-align: center; margin-bottom: 2rem;">
+      <div>
+        <h1 class="page-title">Live Shipment Tracking</h1>
+        <p class="page-subtitle">Real-time status updates and immutable delivery history</p>
+      </div>
+    </div>
+
+    <!-- Search Box -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <form id="track-form" style="display: flex; gap: 0.5rem;">
+        <input type="text" id="track-input" class="form-control" placeholder="Enter Tracking Number (e.g. TRK-20260824-XXXX)" required>
+        <button type="submit" class="btn btn-primary" style="white-space: nowrap;">Track Package</button>
+      </form>
+    </div>
+
+    <div id="alert-box" class="hidden"></div>
+
+    <div id="track-result" class="card hidden">
+      <div class="card-header" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+        <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+          <h2 class="card-title" id="trk-number" style="font-size: 1.25rem;">TRK-000000</h2>
+          <div id="trk-status-badge"></div>
+        </div>
+        <div style="font-size: 0.8rem; color: var(--text-muted);" id="trk-dates"></div>
+      </div>
+
+      <!-- Failure Alert & Reschedule Prompt -->
+      <div id="trk-failed-banner" class="alert alert-danger hidden" style="margin-bottom: 1.25rem;">
+        <div style="font-weight: 600; margin-bottom: 0.25rem;">Delivery Attempt Was Unsuccessful</div>
+        <div id="trk-failed-reason" style="margin-bottom: 0.75rem;">-</div>
+        <button class="btn btn-primary btn-sm" onclick="openPublicRescheduleModal()">Reschedule Delivery Date</button>
+      </div>
+
+      <!-- Key Details Summary -->
+      <div class="grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 1.5rem;">
+        <div style="background: #f8fafc; padding: 0.85rem; border-radius: var(--radius); border: 1px solid var(--border-color);">
+          <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Route</div>
+          <div style="font-weight: 600; margin-top: 0.25rem;">
+            <span id="trk-pickup-zone">-</span> &rarr; <span id="trk-drop-zone">-</span>
+          </div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="trk-order-type">-</div>
+        </div>
+
+        <div style="background: #f8fafc; padding: 0.85rem; border-radius: var(--radius); border: 1px solid var(--border-color);">
+          <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Delivery Agent</div>
+          <div style="font-weight: 600; margin-top: 0.25rem;" id="trk-agent-name">Assigned to Fleet</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="trk-agent-phone">-</div>
+        </div>
+      </div>
+
+      <!-- Timeline -->
+      <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem;">Shipment Milestones</h3>
+      <div class="timeline" id="trk-timeline">
+        <!-- Milestones populated here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Reschedule Modal for Public Page -->
+  <div id="public-reschedule-modal" class="modal-overlay hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Reschedule Delivery Attempt</h3>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closePublicRescheduleModal()">Cancel</button>
+      </div>
+      <div class="modal-body">
+        <form id="public-reschedule-form">
+          <input type="hidden" id="p-reschedule-order-id">
+          <div class="form-group">
+            <label class="form-label" for="p-rescheduleDate">Choose New Delivery Date</label>
+            <input type="date" id="p-rescheduleDate" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="p-rescheduleNote">Special Delivery Instructions</label>
+            <textarea id="p-rescheduleNote" class="form-control" rows="2" placeholder="e.g. Please deliver in the afternoon"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Confirm Rescheduled Date</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    Last-Mile Delivery Management Platform &copy; 2026. All rights reserved.
+  </footer>
+
+  <script src="/js/api.js"></script>
+  <script>
+    setupNavbar('track');
+
+    let currentShipment = null;
+
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('p-rescheduleDate').min = tomorrow.toISOString().split('T')[0];
+    document.getElementById('p-rescheduleDate').value = tomorrow.toISOString().split('T')[0];
+
+    // Check URL search params
+    const urlParams = new URLSearchParams(window.location.search);
+    const trackingQuery = urlParams.get('tracking');
+    if (trackingQuery) {
+      document.getElementById('track-input').value = trackingQuery;
+      performTrack(trackingQuery);
+    }
+
+    document.getElementById('track-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = document.getElementById('track-input').value.trim();
+      if (val) performTrack(val);
+    });
+
+    async function performTrack(trackingNumber) {
+      const resultCard = document.getElementById('track-result');
+      try {
+        const data = await apiFetch(`/tracking/${encodeURIComponent(trackingNumber)}`);
+        const ship = data.shipment;
+        currentShipment = ship;
+
+        resultCard.classList.remove('hidden');
+
+        document.getElementById('trk-number').innerText = ship.trackingNumber;
+        document.getElementById('trk-status-badge').innerHTML = renderStatusBadge(ship.status);
+        document.getElementById('trk-dates').innerText = `Created: ${formatDate(ship.createdAt)} | Last Updated: ${formatDate(ship.updatedAt)}`;
+
+        document.getElementById('trk-pickup-zone').innerText = ship.pickupZone;
+        document.getElementById('trk-drop-zone').innerText = ship.dropZone;
+        document.getElementById('trk-order-type').innerText = `${ship.orderType} Delivery | ${ship.paymentType} (${formatCurrency(ship.totalCharge)})`;
+
+        if (ship.agent) {
+          document.getElementById('trk-agent-name').innerText = ship.agent.name;
+          document.getElementById('trk-agent-phone').innerText = ship.agent.phone ? `Contact: ${ship.agent.phone}` : 'Contact: In Hub';
+        } else {
+          document.getElementById('trk-agent-name').innerText = 'Unassigned';
+          document.getElementById('trk-agent-phone').innerText = 'Awaiting courier assignment';
+        }
+
+        // Failed banner
+        const failBanner = document.getElementById('trk-failed-banner');
+        if (ship.status === 'FAILED') {
+          failBanner.classList.remove('hidden');
+          document.getElementById('trk-failed-reason').innerText = `Reason: ${ship.failureReason || 'Delivery address unreachable'}`;
+        } else {
+          failBanner.classList.add('hidden');
+        }
+
+        // Timeline milestones
+        const timelineContainer = document.getElementById('trk-timeline');
+        timelineContainer.innerHTML = ship.timeline.map(evt => `
+          <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-content">
+              <div class="timeline-header">
+                <span class="timeline-status">${evt.status.replace(/_/g, ' ')}</span>
+                <span class="timeline-time">${formatDate(evt.timestamp)}</span>
+              </div>
+              <div class="timeline-note">${evt.note || 'Status milestone reached.'}</div>
+              <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">Actor: ${evt.actorRole}</div>
+            </div>
+          </div>
+        `).join('');
+
+      } catch (err) {
+        resultCard.classList.add('hidden');
+        showAlert('alert-box', err.message || 'Shipment not found. Please verify the tracking number.', 'danger');
+      }
+    }
+
+    function openPublicRescheduleModal() {
+      if (!currentShipment) return;
+      document.getElementById('p-reschedule-order-id').value = currentShipment.id;
+      document.getElementById('public-reschedule-modal').classList.remove('hidden');
+    }
+
+    function closePublicRescheduleModal() {
+      document.getElementById('public-reschedule-modal').classList.add('hidden');
+    }
+
+    document.getElementById('public-reschedule-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const orderId = document.getElementById('p-reschedule-order-id').value;
+      const newScheduledDate = document.getElementById('p-rescheduleDate').value;
+      const note = document.getElementById('p-rescheduleNote').value;
+
+      try {
+        const data = await apiFetch(`/orders/${orderId}/reschedule`, {
+          method: 'POST',
+          body: JSON.stringify({ newScheduledDate, note })
+        });
+
+        closePublicRescheduleModal();
+        showAlert('alert-box', data.message || 'Shipment rescheduled.', 'success');
+        performTrack(currentShipment.trackingNumber);
+      } catch (err) {
+        alert(err.message || 'Failed to reschedule order');
+      }
+    });
+  </script>
+</body>
+</html>

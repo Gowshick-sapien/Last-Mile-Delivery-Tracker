@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Delivery Portal - Last-Mile Tracker</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="container">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Delivery Agent Portal</h1>
+        <p class="page-subtitle" id="agent-welcome">Assigned delivery tasks and live status updates</p>
+      </div>
+      <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <span id="availability-label" style="font-size: 0.875rem; font-weight: 500;">Status:</span>
+        <button id="btn-toggle-avail" class="btn btn-sm btn-success" onclick="toggleAvailability()">Available for Orders</button>
+      </div>
+    </div>
+
+    <div id="alert-box" class="hidden"></div>
+
+    <!-- Agent Quick Stats -->
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+      <div class="stat-card">
+        <div class="stat-label">Assigned Tasks</div>
+        <div class="stat-value" id="stat-active">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Delivered Today</div>
+        <div class="stat-value" id="stat-delivered" style="color: var(--success);">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Failed Attempts</div>
+        <div class="stat-value" id="stat-failed" style="color: var(--danger);">0</div>
+      </div>
+    </div>
+
+    <!-- Assigned Orders Table -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Assigned Deliveries</h2>
+        <div style="display: flex; gap: 0.5rem;">
+          <select id="filter-status" class="form-control" style="width: auto; padding: 0.35rem 0.65rem;" onchange="loadAgentOrders()">
+            <option value="">All Statuses</option>
+            <option value="ASSIGNED">Assigned</option>
+            <option value="PICKED_UP">Picked Up</option>
+            <option value="IN_TRANSIT">In Transit</option>
+            <option value="OUT_FOR_DELIVERY">Out for Delivery</option>
+            <option value="DELIVERED">Delivered</option>
+            <option value="FAILED">Failed</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="loadAgentOrders()">Refresh</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Tracking Number</th>
+              <th>Customer</th>
+              <th>Pickup Address</th>
+              <th>Delivery Address</th>
+              <th>Payment & Total</th>
+              <th>Status</th>
+              <th>Update Status</th>
+            </tr>
+          </thead>
+          <tbody id="agent-orders-body">
+            <tr>
+              <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                Loading assigned deliveries...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Failure Reason Modal -->
+  <div id="fail-modal" class="modal-overlay hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Record Delivery Failure</h3>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeFailModal()">Cancel</button>
+      </div>
+      <div class="modal-body">
+        <form id="fail-form">
+          <input type="hidden" id="fail-order-id">
+          <div class="form-group">
+            <label class="form-label" for="failReasonSelect">Failure Reason Category</label>
+            <select id="failReasonSelect" class="form-control" onchange="checkCustomReason(this.value)">
+              <option value="Customer premises locked / unavailable">Customer premises locked / unavailable</option>
+              <option value="Customer phone unreachable">Customer phone unreachable</option>
+              <option value="Incorrect or incomplete delivery address">Incorrect or incomplete delivery address</option>
+              <option value="Customer requested future delivery">Customer requested future delivery</option>
+              <option value="Customer refused package">Customer refused package</option>
+              <option value="OTHER">Other Reason (Specify below)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="failCustomReason">Additional Delivery Notes</label>
+            <textarea id="failCustomReason" class="form-control" rows="3" placeholder="Enter specific failure details..."></textarea>
+          </div>
+          <button type="submit" class="btn btn-danger btn-block">Confirm Failed Delivery</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    Last-Mile Delivery Management Platform &copy; 2026. All rights reserved.
+  </footer>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const user = getUser();
+    if (!user || user.role !== 'AGENT') {
+      window.location.href = '/index.html';
+    }
+
+    setupNavbar('agent');
+    document.getElementById('agent-welcome').innerText = `Logged in as ${user.name} (${user.agentProfile?.currentZone?.name || 'Assigned Zone'})`;
+
+    let isAvailable = user.agentProfile?.isAvailable ?? true;
+    updateAvailabilityUI();
+
+    function updateAvailabilityUI() {
+      const btn = document.getElementById('btn-toggle-avail');
+      if (isAvailable) {
+        btn.innerText = 'Status: Available';
+        btn.className = 'btn btn-sm btn-success';
+      } else {
+        btn.innerText = 'Status: Busy / Offline';
+        btn.className = 'btn btn-sm btn-secondary';
+      }
+    }
+
+    async function toggleAvailability() {
+      try {
+        const data = await apiFetch('/agent/availability', {
+          method: 'PATCH',
+          body: JSON.stringify({ isAvailable: !isAvailable })
+        });
+        isAvailable = data.profile.isAvailable;
+        updateAvailabilityUI();
+        showAlert('alert-box', data.message, 'success');
+      } catch (err) {
+        showAlert('alert-box', err.message || 'Failed to update availability', 'danger');
+      }
+    }
+
+    async function loadAgentOrders() {
+      const tbody = document.getElementById('agent-orders-body');
+      const statusFilter = document.getElementById('filter-status').value;
+      const query = statusFilter ? `?status=${statusFilter}` : '';
+
+      try {
+        const data = await apiFetch(`/agent/orders${query}`);
+        const orders = data.orders;
+
+        // Calculate quick metrics
+        let activeCount = 0;
+        let deliveredCount = 0;
+        let failedCount = 0;
+
+        orders.forEach(o => {
+          if (['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'].includes(o.status)) activeCount++;
+          if (o.status === 'DELIVERED') deliveredCount++;
+          if (o.status === 'FAILED') failedCount++;
+        });
+
+        document.getElementById('stat-active').innerText = activeCount;
+        document.getElementById('stat-delivered').innerText = deliveredCount;
+        document.getElementById('stat-failed').innerText = failedCount;
+
+        if (orders.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                No delivery tasks assigned currently.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbody.innerHTML = orders.map(order => {
+          let actionButtons = '';
+
+          if (order.status === 'ASSIGNED') {
+            actionButtons = `<button class="btn btn-primary btn-sm" onclick="advanceStatus('${order.id}', 'PICKED_UP')">Mark Picked Up</button>`;
+          } else if (order.status === 'PICKED_UP') {
+            actionButtons = `<button class="btn btn-primary btn-sm" onclick="advanceStatus('${order.id}', 'IN_TRANSIT')">Mark In Transit</button>`;
+          } else if (order.status === 'IN_TRANSIT') {
+            actionButtons = `<button class="btn btn-primary btn-sm" onclick="advanceStatus('${order.id}', 'OUT_FOR_DELIVERY')">Out for Delivery</button>`;
+          } else if (order.status === 'OUT_FOR_DELIVERY') {
+            actionButtons = `
+              <div style="display: flex; gap: 0.35rem;">
+                <button class="btn btn-success btn-sm" onclick="advanceStatus('${order.id}', 'DELIVERED')">Delivered</button>
+                <button class="btn btn-danger btn-sm" onclick="openFailModal('${order.id}')">Failed</button>
+              </div>
+            `;
+          } else {
+            actionButtons = `<span style="font-size: 0.75rem; color: var(--text-muted);">Completed</span>`;
+          }
+
+          return `
+            <tr>
+              <td>
+                <a href="/track.html?tracking=${order.trackingNumber}" style="font-weight: 600; color: var(--primary); text-decoration: none;">
+                  ${order.trackingNumber}
+                </a>
+              </td>
+              <td>
+                <div>${order.customer?.name || 'Customer'}</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">${order.customer?.phone || 'No phone'}</div>
+              </td>
+              <td style="max-width: 180px;">
+                <div>${order.pickupAddress}</div>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">${order.pickupZone?.name || 'Local'} (${order.pickupPincode})</span>
+              </td>
+              <td style="max-width: 180px;">
+                <div>${order.dropAddress}</div>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">${order.dropZone?.name || 'Local'} (${order.dropPincode})</span>
+              </td>
+              <td>
+                <div style="font-weight: 600;">${formatCurrency(order.totalCharge)}</div>
+                <span style="font-size: 0.75rem; color: ${order.paymentType === 'COD' ? 'var(--warning)' : 'var(--success)'}; font-weight: 600;">
+                  ${order.paymentType === 'COD' ? 'Collect COD' : 'Prepaid'}
+                </span>
+              </td>
+              <td>${renderStatusBadge(order.status)}</td>
+              <td>${actionButtons}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="color: var(--danger); text-align: center;">Error loading orders: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function advanceStatus(orderId, nextStatus, note = '') {
+      try {
+        const data = await apiFetch(`/agent/orders/${orderId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: nextStatus, note })
+        });
+        showAlert('alert-box', data.message, 'success');
+        loadAgentOrders();
+      } catch (err) {
+        showAlert('alert-box', err.message || 'Status transition failed', 'danger');
+      }
+    }
+
+    function openFailModal(orderId) {
+      document.getElementById('fail-order-id').value = orderId;
+      document.getElementById('failCustomReason').value = '';
+      document.getElementById('fail-modal').classList.remove('hidden');
+    }
+
+    function closeFailModal() {
+      document.getElementById('fail-modal').classList.add('hidden');
+    }
+
+    function checkCustomReason(val) {
+      // Optional toggle
+    }
+
+    document.getElementById('fail-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const orderId = document.getElementById('fail-order-id').value;
+      const category = document.getElementById('failReasonSelect').value;
+      const custom = document.getElementById('failCustomReason').value.trim();
+
+      const finalReason = custom ? `${category}: ${custom}` : category;
+
+      try {
+        const data = await apiFetch(`/agent/orders/${orderId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            status: 'FAILED',
+            failureReason: finalReason,
+            note: finalReason
+          })
+        });
+
+        closeFailModal();
+        showAlert('alert-box', `Order marked as Failed. Customer has been notified to reschedule.`, 'warning');
+        loadAgentOrders();
+      } catch (err) {
+        alert(err.message || 'Failed to record status');
+      }
+    });
+
+    loadAgentOrders();
+  </script>
+</body>
+</html>
