@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String         @id @default(uuid())
+  name         String
+  email        String         @unique
+  passwordHash String
+  phone        String?
+  role         String         @default("CUSTOMER") // CUSTOMER, AGENT, ADMIN
+  agentProfile AgentProfile?
+  orders       Order[]        @relation("CustomerOrders")
+  assignedJobs Order[]        @relation("AgentOrders")
+  trackingLogs TrackingEvent[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model Zone {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  description   String?
+  areas         Area[]
+  agents        AgentProfile[]
+  pickupOrders  Order[]        @relation("PickupZoneOrders")
+  dropOrders    Order[]        @relation("DropZoneOrders")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Area {
+  id        String   @id @default(uuid())
+  pincode   String   @unique
+  areaName  String
+  zoneId    String
+  zone      Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RateCard {
+  id         String   @id @default(uuid())
+  orderType  String   // B2B, B2C
+  zoneType   String   // INTRA, INTER
+  baseCharge Float    @default(0.0)
+  ratePerKg  Float    @default(0.0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([orderType, zoneType])
+}
+
+model CODSurcharge {
+  id              String   @id @default(uuid())
+  orderType       String   @unique // B2B, B2C
+  surchargeAmount Float    @default(0.0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AgentProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentZoneId String?
+  currentZone   Zone?    @relation(fields: [currentZoneId], references: [id], onDelete: SetNull)
+  isAvailable   Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+}
+
+model Order {
+  id                 String          @id @default(uuid())
+  trackingNumber     String          @unique
+  customerId         String
+  customer           User            @relation("CustomerOrders", fields: [customerId], references: [id])
+  agentId            String?
+  agent              User?           @relation("AgentOrders", fields: [agentId], references: [id])
+  
+  pickupAddress      String
+  pickupPincode      String
+  pickupZoneId       String?
+  pickupZone         Zone?           @relation("PickupZoneOrders", fields: [pickupZoneId], references: [id])
+  
+  dropAddress        String
+  dropPincode        String
+  dropZoneId         String?
+  dropZone           Zone?           @relation("DropZoneOrders", fields: [dropZoneId], references: [id])
+  
+  lengthCm           Float
+  breadthCm          Float
+  heightCm           Float
+  actualWeightKg     Float
+  volumetricWeightKg Float
+  billedWeightKg     Float
+  
+  orderType          String          // B2B, B2C
+  paymentType        String          // PREPAID, COD
+  zoneType           String          // INTRA, INTER
+  
+  baseCharge         Float
+  weightCharge       Float
+  codSurcharge       Float
+  totalCharge        Float
+  
+  status             String          @default("CREATED") // CREATED, ASSIGNED, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, FAILED, RESCHEDULED, CANCELLED
+  scheduledDate      DateTime?
+  failureReason      String?
+  
+  trackingEvents     TrackingEvent[]
+  notifications      Notification[]
+  
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+}
+
+model TrackingEvent {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    String
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  actorRole String   // CUSTOMER, AGENT, ADMIN, SYSTEM
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id             String   @id @default(uuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  recipientEmail String
+  recipientRole  String
+  subject        String
+  content        String
+  status         String   @default("SENT") // SENT, SIMULATED, FAILED
+  createdAt      DateTime @default(now())
+}
