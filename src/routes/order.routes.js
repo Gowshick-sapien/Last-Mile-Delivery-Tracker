@@ -1,12 +1,27 @@
 const express = require('express');
+const prisma = require('../config/prisma');
 const { calculateRate } = require('../services/rateCalculator.service');
 const { createOrder, getCustomerOrders, getOrderDetails } = require('../services/order.service');
 const { rescheduleOrder } = require('../services/status.service');
+const { generateShippingLabel, generateTaxInvoice } = require('../services/pdfGenerator.service');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
-// 1. Calculate rate quote (Stateless - available with or without token)
+// 1. Get available Delivery Tiers (SLAs)
+router.get('/tiers', async (req, res, next) => {
+  try {
+    const tiers = await prisma.deliveryTier.findMany({
+      where: { isActive: true },
+      orderBy: { multiplier: 'asc' }
+    });
+    res.json({ success: true, tiers });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 2. Calculate rate quote (Stateless)
 router.post('/calculate', async (req, res, next) => {
   try {
     const {
@@ -17,7 +32,9 @@ router.post('/calculate', async (req, res, next) => {
       heightCm,
       actualWeightKg,
       orderType,
-      paymentType
+      paymentType,
+      deliveryTierCode,
+      customerId
     } = req.body;
 
     const rateQuote = await calculateRate({
@@ -28,7 +45,9 @@ router.post('/calculate', async (req, res, next) => {
       heightCm,
       actualWeightKg,
       orderType,
-      paymentType
+      paymentType,
+      deliveryTierCode,
+      customerId
     });
 
     res.json({ success: true, rateQuote });
@@ -40,7 +59,7 @@ router.post('/calculate', async (req, res, next) => {
 // All following routes require authentication
 router.use(authenticateToken);
 
-// 2. Place new order
+// 3. Place new order
 router.post('/', async (req, res, next) => {
   try {
     const {
@@ -54,6 +73,7 @@ router.post('/', async (req, res, next) => {
       actualWeightKg,
       orderType,
       paymentType,
+      deliveryTierCode,
       autoAssign = true
     } = req.body;
 
@@ -69,6 +89,7 @@ router.post('/', async (req, res, next) => {
       actualWeightKg,
       orderType,
       paymentType,
+      deliveryTierCode,
       autoAssign,
       creatorRole: req.user.role,
       creatorId: req.user.id
@@ -78,6 +99,7 @@ router.post('/', async (req, res, next) => {
       success: true,
       message: 'Order created successfully.',
       order: result.order,
+      invoice: result.invoice,
       rateQuote: result.rateQuote,
       assignedAgent: result.assignedAgent
     });
@@ -86,7 +108,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// 3. List authenticated customer's orders
+// 4. List authenticated customer's orders
 router.get('/', async (req, res, next) => {
   try {
     const orders = await getCustomerOrders(req.user.id);
@@ -96,7 +118,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// 4. Order details and tracking history
+// 5. Order details
 router.get('/:id', async (req, res, next) => {
   try {
     const order = await getOrderDetails(req.params.id);
@@ -105,9 +127,8 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Order not found.' });
     }
 
-    // Access control: Customer can only view own orders unless Admin or assigned Agent
     if (req.user.role === 'CUSTOMER' && order.customerId !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized access to order details.' });
+      return res.status(403).json({ success: false, message: 'Unauthorized access to order.' });
     }
 
     if (req.user.role === 'AGENT' && order.agentId !== req.user.id) {
@@ -120,7 +141,43 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// 5. Reschedule failed delivery
+// 6. Download 4x6 Shipping Label PDF
+router.get('/:id/label', async (req, res, next) => {
+  try {
+    const order = await getOrderDetails(req.params.id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found.' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Label-${order.trackingNumber}.pdf"`);
+
+    const pdfDoc = generateShippingLabel(order);
+    pdfDoc.pipe(res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 7. Download GST Tax Invoice PDF
+router.get('/:id/invoice', async (req, res, next) => {
+  try {
+    const order = await getOrderDetails(req.params.id);
+    if (!order || !order.invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found for this order.' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Invoice-${order.invoice.invoiceNumber}.pdf"`);
+
+    const pdfDoc = generateTaxInvoice(order, order.invoice);
+    pdfDoc.pipe(res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 8. Reschedule failed delivery
 router.post('/:id/reschedule', async (req, res, next) => {
   try {
     const { newScheduledDate, note } = req.body;

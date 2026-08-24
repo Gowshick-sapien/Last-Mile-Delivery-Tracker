@@ -9,7 +9,6 @@ const { createOrder, getAdminOrders } = require('../services/order.service');
 
 const router = express.Router();
 
-// Guard all admin routes with authentication and ADMIN role
 router.use(authenticateToken, requireRole('ADMIN'));
 
 // --- Overview Metrics ---
@@ -32,6 +31,7 @@ router.get('/stats', async (req, res, next) => {
       where: { role: 'AGENT' }
     });
     const totalZones = await prisma.zone.count();
+    const totalContracts = await prisma.clientContract.count({ where: { isActive: true } });
 
     res.json({
       success: true,
@@ -42,9 +42,176 @@ router.get('/stats', async (req, res, next) => {
         failedOrders,
         totalRevenue: totalRevenueResult._sum.totalCharge || 0,
         totalAgents,
-        totalZones
+        totalZones,
+        totalContracts
       }
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- Delivery Tiers (SLAs) ---
+router.get('/delivery-tiers', async (req, res, next) => {
+  try {
+    const tiers = await prisma.deliveryTier.findMany({ orderBy: { multiplier: 'asc' } });
+    res.json({ success: true, tiers });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/delivery-tiers', async (req, res, next) => {
+  try {
+    const { code, name, multiplier, slaHours, cutoffHour, allowedZoneType } = req.body;
+    const tier = await prisma.deliveryTier.create({
+      data: {
+        code: code.toUpperCase().trim(),
+        name: name.trim(),
+        multiplier: parseFloat(multiplier),
+        slaHours: parseInt(slaHours) || 24,
+        cutoffHour: cutoffHour ? parseInt(cutoffHour) : null,
+        allowedZoneType: allowedZoneType || 'ALL',
+        isActive: true
+      }
+    });
+    res.status(201).json({ success: true, message: 'Delivery tier created.', tier });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/delivery-tiers/:id', async (req, res, next) => {
+  try {
+    const { name, multiplier, slaHours, cutoffHour, allowedZoneType, isActive } = req.body;
+    const tier = await prisma.deliveryTier.update({
+      where: { id: req.params.id },
+      data: {
+        name: name ? name.trim() : undefined,
+        multiplier: multiplier !== undefined ? parseFloat(multiplier) : undefined,
+        slaHours: slaHours !== undefined ? parseInt(slaHours) : undefined,
+        cutoffHour: cutoffHour !== undefined ? (cutoffHour ? parseInt(cutoffHour) : null) : undefined,
+        allowedZoneType: allowedZoneType || undefined,
+        isActive: isActive !== undefined ? Boolean(isActive) : undefined
+      }
+    });
+    res.json({ success: true, message: 'Delivery tier updated.', tier });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- Dynamic Surge Rules ---
+router.get('/surge-rules', async (req, res, next) => {
+  try {
+    const rules = await prisma.surgeRule.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { zone: true }
+    });
+    res.json({ success: true, rules });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/surge-rules', async (req, res, next) => {
+  try {
+    const { name, surgeType, multiplier, flatAmount, startHour, endHour, zoneId, pincode } = req.body;
+    const rule = await prisma.surgeRule.create({
+      data: {
+        name: name.trim(),
+        surgeType: surgeType.toUpperCase().trim(),
+        multiplier: multiplier !== undefined ? parseFloat(multiplier) : 1.0,
+        flatAmount: flatAmount !== undefined ? parseFloat(flatAmount) : 0.0,
+        startHour: startHour !== undefined && startHour !== '' ? parseInt(startHour) : null,
+        endHour: endHour !== undefined && endHour !== '' ? parseInt(endHour) : null,
+        zoneId: zoneId || null,
+        pincode: pincode ? String(pincode).trim() : null,
+        isActive: true
+      }
+    });
+    res.status(201).json({ success: true, message: 'Surge rule created.', rule });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/surge-rules/:id', async (req, res, next) => {
+  try {
+    const { name, multiplier, flatAmount, startHour, endHour, isActive } = req.body;
+    const rule = await prisma.surgeRule.update({
+      where: { id: req.params.id },
+      data: {
+        name: name ? name.trim() : undefined,
+        multiplier: multiplier !== undefined ? parseFloat(multiplier) : undefined,
+        flatAmount: flatAmount !== undefined ? parseFloat(flatAmount) : undefined,
+        startHour: startHour !== undefined ? parseInt(startHour) : undefined,
+        endHour: endHour !== undefined ? parseInt(endHour) : undefined,
+        isActive: isActive !== undefined ? Boolean(isActive) : undefined
+      }
+    });
+    res.json({ success: true, message: 'Surge rule updated.', rule });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/surge-rules/:id', async (req, res, next) => {
+  try {
+    await prisma.surgeRule.delete({ where: { id: req.params.id } });
+    res.json({ success: true, message: 'Surge rule deleted.' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- Enterprise Client Contracts ---
+router.get('/client-contracts', async (req, res, next) => {
+  try {
+    const contracts = await prisma.clientContract.findMany({
+      include: {
+        customer: { select: { id: true, name: true, email: true, phone: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ success: true, contracts });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/client-contracts', async (req, res, next) => {
+  try {
+    const { customerEmail, customBaseCharge, customRatePerKg, discountPercentage, minMonthlyVolume } = req.body;
+    const customer = await prisma.user.findUnique({
+      where: { email: customerEmail.toLowerCase().trim() }
+    });
+
+    if (!customer) {
+      return res.status(404).json({ success: false, message: `No user found with email '${customerEmail}'.` });
+    }
+
+    const contract = await prisma.clientContract.upsert({
+      where: { customerId: customer.id },
+      update: {
+        customBaseCharge: customBaseCharge !== undefined ? parseFloat(customBaseCharge) : null,
+        customRatePerKg: customRatePerKg !== undefined ? parseFloat(customRatePerKg) : null,
+        discountPercentage: discountPercentage !== undefined ? parseFloat(discountPercentage) : 0.0,
+        minMonthlyVolume: minMonthlyVolume !== undefined ? parseInt(minMonthlyVolume) : 0,
+        isActive: true
+      },
+      create: {
+        customerId: customer.id,
+        customBaseCharge: customBaseCharge !== undefined ? parseFloat(customBaseCharge) : null,
+        customRatePerKg: customRatePerKg !== undefined ? parseFloat(customRatePerKg) : null,
+        discountPercentage: discountPercentage !== undefined ? parseFloat(discountPercentage) : 0.0,
+        minMonthlyVolume: minMonthlyVolume !== undefined ? parseInt(minMonthlyVolume) : 0,
+        isActive: true
+      },
+      include: { customer: true }
+    });
+
+    res.json({ success: true, message: 'Client contract saved successfully.', contract });
   } catch (error) {
     next(error);
   }
@@ -57,14 +224,8 @@ router.get('/zones', async (req, res, next) => {
       orderBy: { name: 'asc' },
       include: {
         areas: { orderBy: { pincode: 'asc' } },
-        agents: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } }
-          }
-        },
-        _count: {
-          select: { areas: true, agents: true, pickupOrders: true }
-        }
+        agents: { include: { user: { select: { id: true, name: true, email: true, phone: true } } } },
+        _count: { select: { areas: true, agents: true, pickupOrders: true } }
       }
     });
     res.json({ success: true, zones });
@@ -76,42 +237,10 @@ router.get('/zones', async (req, res, next) => {
 router.post('/zones', async (req, res, next) => {
   try {
     const { name, description } = req.body;
-    if (!name || !name.trim()) {
-      return res.status(400).json({ success: false, message: 'Zone name is required.' });
-    }
-
-    const existing = await prisma.zone.findUnique({
-      where: { name: name.trim() }
-    });
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'A zone with this name already exists.' });
-    }
-
     const zone = await prisma.zone.create({
-      data: {
-        name: name.trim(),
-        description: description ? description.trim() : null
-      }
+      data: { name: name.trim(), description: description ? description.trim() : null }
     });
-    res.status(201).json({ success: true, message: 'Zone created successfully.', zone });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.put('/zones/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { name, description } = req.body;
-
-    const updated = await prisma.zone.update({
-      where: { id },
-      data: {
-        name: name ? name.trim() : undefined,
-        description: description !== undefined ? description : undefined
-      }
-    });
-    res.json({ success: true, message: 'Zone updated.', zone: updated });
+    res.status(201).json({ success: true, message: 'Zone created.', zone });
   } catch (error) {
     next(error);
   }
@@ -119,9 +248,8 @@ router.put('/zones/:id', async (req, res, next) => {
 
 router.delete('/zones/:id', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    await prisma.zone.delete({ where: { id } });
-    res.json({ success: true, message: 'Zone deleted successfully.' });
+    await prisma.zone.delete({ where: { id: req.params.id } });
+    res.json({ success: true, message: 'Zone deleted.' });
   } catch (error) {
     next(error);
   }
@@ -143,46 +271,11 @@ router.get('/areas', async (req, res, next) => {
 router.post('/areas', async (req, res, next) => {
   try {
     const { pincode, areaName, zoneId } = req.body;
-    if (!pincode || !areaName || !zoneId) {
-      return res.status(400).json({ success: false, message: 'Pincode, area name, and zone ID are required.' });
-    }
-
-    const existing = await prisma.area.findUnique({
-      where: { pincode: String(pincode).trim() }
-    });
-    if (existing) {
-      return res.status(409).json({ success: false, message: `Pincode ${pincode} is already mapped to an existing zone.` });
-    }
-
     const area = await prisma.area.create({
-      data: {
-        pincode: String(pincode).trim(),
-        areaName: areaName.trim(),
-        zoneId
-      },
+      data: { pincode: String(pincode).trim(), areaName: areaName.trim(), zoneId },
       include: { zone: true }
     });
-    res.status(201).json({ success: true, message: 'Area mapped to zone successfully.', area });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.put('/areas/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { pincode, areaName, zoneId } = req.body;
-
-    const updated = await prisma.area.update({
-      where: { id },
-      data: {
-        pincode: pincode ? String(pincode).trim() : undefined,
-        areaName: areaName ? areaName.trim() : undefined,
-        zoneId: zoneId || undefined
-      },
-      include: { zone: true }
-    });
-    res.json({ success: true, message: 'Area updated.', area: updated });
+    res.status(201).json({ success: true, message: 'Area mapped.', area });
   } catch (error) {
     next(error);
   }
@@ -190,9 +283,8 @@ router.put('/areas/:id', async (req, res, next) => {
 
 router.delete('/areas/:id', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    await prisma.area.delete({ where: { id } });
-    res.json({ success: true, message: 'Area removed successfully.' });
+    await prisma.area.delete({ where: { id: req.params.id } });
+    res.json({ success: true, message: 'Area deleted.' });
   } catch (error) {
     next(error);
   }
@@ -213,19 +305,11 @@ router.get('/rate-cards', async (req, res, next) => {
 router.put('/rate-cards', async (req, res, next) => {
   try {
     const { orderType, zoneType, baseCharge, ratePerKg } = req.body;
-
-    if (!orderType || !zoneType || baseCharge === undefined || ratePerKg === undefined) {
-      return res.status(400).json({ success: false, message: 'orderType, zoneType, baseCharge, and ratePerKg are required.' });
-    }
-
-    const cleanOrderType = orderType.toUpperCase().trim();
-    const cleanZoneType = zoneType.toUpperCase().trim();
-
     const rateCard = await prisma.rateCard.upsert({
       where: {
         orderType_zoneType: {
-          orderType: cleanOrderType,
-          zoneType: cleanZoneType
+          orderType: orderType.toUpperCase().trim(),
+          zoneType: zoneType.toUpperCase().trim()
         }
       },
       update: {
@@ -233,14 +317,13 @@ router.put('/rate-cards', async (req, res, next) => {
         ratePerKg: parseFloat(ratePerKg)
       },
       create: {
-        orderType: cleanOrderType,
-        zoneType: cleanZoneType,
+        orderType: orderType.toUpperCase().trim(),
+        zoneType: zoneType.toUpperCase().trim(),
         baseCharge: parseFloat(baseCharge),
         ratePerKg: parseFloat(ratePerKg)
       }
     });
-
-    res.json({ success: true, message: 'Rate card updated successfully.', rateCard });
+    res.json({ success: true, message: 'Rate card updated.', rateCard });
   } catch (error) {
     next(error);
   }
@@ -249,9 +332,7 @@ router.put('/rate-cards', async (req, res, next) => {
 // --- COD Surcharges Management ---
 router.get('/cod-surcharges', async (req, res, next) => {
   try {
-    const surcharges = await prisma.cODSurcharge.findMany({
-      orderBy: { orderType: 'asc' }
-    });
+    const surcharges = await prisma.cODSurcharge.findMany({ orderBy: { orderType: 'asc' } });
     res.json({ success: true, surcharges });
   } catch (error) {
     next(error);
@@ -261,22 +342,14 @@ router.get('/cod-surcharges', async (req, res, next) => {
 router.put('/cod-surcharges', async (req, res, next) => {
   try {
     const { orderType, surchargeAmount } = req.body;
-
-    if (!orderType || surchargeAmount === undefined) {
-      return res.status(400).json({ success: false, message: 'orderType and surchargeAmount are required.' });
-    }
-
-    const cleanOrderType = orderType.toUpperCase().trim();
-
     const surcharge = await prisma.cODSurcharge.upsert({
-      where: { orderType: cleanOrderType },
+      where: { orderType: orderType.toUpperCase().trim() },
       update: { surchargeAmount: parseFloat(surchargeAmount) },
       create: {
-        orderType: cleanOrderType,
+        orderType: orderType.toUpperCase().trim(),
         surchargeAmount: parseFloat(surchargeAmount)
       }
     });
-
     res.json({ success: true, message: 'COD surcharge updated.', surcharge });
   } catch (error) {
     next(error);
@@ -288,15 +361,10 @@ router.get('/agents', async (req, res, next) => {
   try {
     const agents = await prisma.user.findMany({
       where: { role: 'AGENT' },
-      include: {
-        agentProfile: {
-          include: { currentZone: true }
-        }
-      },
+      include: { agentProfile: { include: { currentZone: true } } },
       orderBy: { name: 'asc' }
     });
 
-    // Compute active order workload for each agent
     const agentsWithStats = await Promise.all(
       agents.map(async (agent) => {
         const activeCount = await prisma.order.count({
@@ -306,10 +374,7 @@ router.get('/agents', async (req, res, next) => {
           }
         });
         const completedCount = await prisma.order.count({
-          where: {
-            agentId: agent.id,
-            status: 'DELIVERED'
-          }
+          where: { agentId: agent.id, status: 'DELIVERED' }
         });
         return {
           id: agent.id,
@@ -334,59 +399,36 @@ router.get('/agents', async (req, res, next) => {
 router.post('/agents', async (req, res, next) => {
   try {
     const { name, email, password, phone, zoneId } = req.body;
-
-    if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: 'Name, email, and password are required.' });
-    }
-
-    const cleanEmail = email.toLowerCase().trim();
-    const existing = await prisma.user.findUnique({ where: { email: cleanEmail } });
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'User with this email already exists.' });
-    }
-
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
       data: {
         name: name.trim(),
-        email: cleanEmail,
+        email: email.toLowerCase().trim(),
         passwordHash,
         phone: phone ? phone.trim() : null,
         role: 'AGENT'
       }
     });
 
-    const profile = await prisma.agentProfile.create({
+    await prisma.agentProfile.create({
       data: {
         userId: user.id,
         currentZoneId: zoneId || null,
         isAvailable: true
-      },
-      include: { currentZone: true }
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Delivery agent created successfully.',
-      agent: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        isAvailable: profile.isAvailable,
-        zoneName: profile.currentZone?.name || 'Unassigned'
       }
     });
+
+    res.status(201).json({ success: true, message: 'Delivery agent registered.' });
   } catch (error) {
     next(error);
   }
 });
 
-// --- Admin Order Operations ---
+// --- Admin Orders Management ---
 router.get('/orders', async (req, res, next) => {
   try {
-    const { status, zoneId, agentId, orderType, paymentType, search } = req.query;
-    const orders = await getAdminOrders({ status, zoneId, agentId, orderType, paymentType, search });
+    const { status, zoneId, agentId, orderType, paymentType, deliveryTierCode, search } = req.query;
+    const orders = await getAdminOrders({ status, zoneId, agentId, orderType, paymentType, deliveryTierCode, search });
     res.json({ success: true, orders });
   } catch (error) {
     next(error);
@@ -396,7 +438,6 @@ router.get('/orders', async (req, res, next) => {
 router.post('/orders', async (req, res, next) => {
   try {
     const {
-      customerId,
       customerEmail,
       pickupAddress,
       pickupPincode,
@@ -408,26 +449,20 @@ router.post('/orders', async (req, res, next) => {
       actualWeightKg,
       orderType,
       paymentType,
+      deliveryTierCode,
       autoAssign = true
     } = req.body;
 
-    let targetCustomerId = customerId;
+    const customer = await prisma.user.findUnique({
+      where: { email: customerEmail.toLowerCase().trim() }
+    });
 
-    if (!targetCustomerId && customerEmail) {
-      const customer = await prisma.user.findUnique({
-        where: { email: customerEmail.toLowerCase().trim() }
-      });
-      if (customer) {
-        targetCustomerId = customer.id;
-      }
-    }
-
-    if (!targetCustomerId) {
-      return res.status(400).json({ success: false, message: 'Valid customerId or customerEmail is required.' });
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer account not found.' });
     }
 
     const result = await createOrder({
-      customerId: targetCustomerId,
+      customerId: customer.id,
       pickupAddress,
       pickupPincode,
       dropAddress,
@@ -438,6 +473,7 @@ router.post('/orders', async (req, res, next) => {
       actualWeightKg,
       orderType,
       paymentType,
+      deliveryTierCode,
       autoAssign,
       creatorRole: 'ADMIN',
       creatorId: req.user.id
@@ -445,8 +481,9 @@ router.post('/orders', async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Order created on behalf of customer.',
+      message: 'Order created for customer.',
       order: result.order,
+      invoice: result.invoice,
       rateQuote: result.rateQuote,
       assignedAgent: result.assignedAgent
     });
@@ -457,15 +494,8 @@ router.post('/orders', async (req, res, next) => {
 
 router.post('/orders/:id/assign', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const { agentId } = req.body;
-
-    if (!agentId) {
-      return res.status(400).json({ success: false, message: 'agentId is required for manual assignment.' });
-    }
-
-    const result = await manualAssignAgent(id, agentId, req.user.id, 'ADMIN');
-    res.json({ success: true, message: 'Agent assigned successfully.', ...result });
+    const result = await manualAssignAgent(req.params.id, req.body.agentId, req.user.id, 'ADMIN');
+    res.json({ success: true, message: 'Agent assigned.', ...result });
   } catch (error) {
     next(error);
   }
@@ -473,9 +503,8 @@ router.post('/orders/:id/assign', async (req, res, next) => {
 
 router.post('/orders/:id/auto-assign', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const result = await autoAssignAgent(id, req.user.id, 'ADMIN');
-    res.json({ success: true, message: 'Auto-assignment completed successfully.', ...result });
+    const result = await autoAssignAgent(req.params.id, req.user.id, 'ADMIN');
+    res.json({ success: true, message: 'Auto-assignment completed.', ...result });
   } catch (error) {
     next(error);
   }
@@ -483,24 +512,17 @@ router.post('/orders/:id/auto-assign', async (req, res, next) => {
 
 router.patch('/orders/:id/override-status', async (req, res, next) => {
   try {
-    const { id } = req.params;
     const { status, note, failureReason } = req.body;
-
-    if (!status) {
-      return res.status(400).json({ success: false, message: 'New status is required.' });
-    }
-
     const updatedOrder = await updateOrderStatus({
-      orderId: id,
+      orderId: req.params.id,
       newStatus: status,
       actorId: req.user.id,
       actorRole: 'ADMIN',
-      note: note || 'Administrative status override',
+      note,
       failureReason,
       isOverride: true
     });
-
-    res.json({ success: true, message: `Order status overridden to '${status}'.`, order: updatedOrder });
+    res.json({ success: true, message: `Status overridden to '${status}'.`, order: updatedOrder });
   } catch (error) {
     next(error);
   }
